@@ -1,0 +1,15 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: garden_db
+    environment:
+      POSTGRES_DB: garden_reservation_db
+      POSGRES_USER: postgres
+      POSTGRES_PASSWORD: postgrespassword
+    ports:
+    - "5432:5432"
+    volumes:
+    - pgdata:/var/lib/postgresql/data
+
+volumes:
+  pgdata:
