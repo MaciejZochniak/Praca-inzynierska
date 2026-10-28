@@ -15,6 +15,6 @@ public interface ReservationsRepository extends JpaRepository<Reservations, Long
            "AND r.status <> :excludedStatus "+"AND r.startDate < :endDate "+"AND r.endDate > :startDate")
     List<Reservations> findConflictingReservations(
             @Param("itemId") Long itemId, @Param("startDate") LocalDateTime startDate,
-            @Param("endDate") LocalDateTime endDate, @Param("excludedStatus") ReservationStatus excludedStatus
+            @Param("endDate") LocalDateTime endDate
     );
 }

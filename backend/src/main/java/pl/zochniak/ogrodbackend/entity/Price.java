@@ -21,6 +21,7 @@ public class Price {
     private Item item;
 
     @Column(nullable = false, precision = 4, scale = 2)
+    @Builder.Default
     private BigDecimal multiplier = BigDecimal.ONE;
 
     @Column(name = "min_duration")

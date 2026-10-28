@@ -1,17 +1,20 @@
 package pl.zochniak.ogrodbackend.entity;
+import pl.zochniak.ogrodbackend.entity.enums.ReservationStatus;
 import jakarta.persistence.*;
 import lombok.*;
+import org.hibernate.annotations.CreationTimestamp;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 
-import org.hibernate.annotations.CreationTimestamp;
-
 @Entity
 @Table(name = "reservations")
 @Getter
 @Setter
+@NoArgsConstructor
+@AllArgsConstructor
+@Builder
 public class Reservations {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -42,6 +45,10 @@ public class Reservations {
 
     @Column(nullable = false, precision = 10, scale = 2)
     private BigDecimal totalPrice;
+
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 20)
+    private ReservationStatus status;
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn (name = "employee_id", nullable = true)
