@@ -35,7 +35,7 @@ public class User {
 
     @Enumerated (EnumType.STRING)
     @Column(nullable = false, length = 20)
-    private String role;
+    private Role role;
 
     @CreationTimestamp 
     @Column(name = "created_at", updatable = false)
