@@ -2,6 +2,10 @@ package pl.zochniak.ogrodbackend.entity;
 import jakarta.persistence.*;
 import lombok.*;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.List;
+
+import org.hibernate.annotations.CreationTimestamp;
 
 @Entity
 @Table(name = "categories")
@@ -22,11 +26,11 @@ public class Category {
     @Column(columnDefinition = "TEXT")
     private String description;
 
+    @CreationTimestamp 
     @Column(name = "created_at", updatable = false)
     private LocalDateTime createdAt;
-
-    @PrePersist
-    protected void onCreate() {
-        this.createdAt = LocalDateTime.now();
-    }
+    
+    @OneToMany (mappedBy = "category", cascade = CascadeType.ALL)
+    @Builder .Default
+    private List<Item> items = new ArrayList<>();
 }

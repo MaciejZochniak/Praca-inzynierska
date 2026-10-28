@@ -1,10 +1,12 @@
 package pl.zochniak.ogrodbackend.entity;
 import jakarta.persistence.*;
-import lombok.Getter;
-import lombok.Setter;
+import lombok.*;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
+
+import org.hibernate.annotations.CreationTimestamp;
 
 @Entity
 @Table(name = "reservations")
@@ -15,7 +17,7 @@ public class Reservations {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @ManyToOne
+    @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "user_id", nullable = true)
     private User user;
 
@@ -41,7 +43,15 @@ public class Reservations {
     @Column(nullable = false, precision = 10, scale = 2)
     private BigDecimal totalPrice;
 
-    @ManyToOne 
+    @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn (name = "employee_id", nullable = true)
     private User employee;
+
+    @CreationTimestamp 
+    @Column(name = "created_at", updatable = false)
+    private LocalDateTime createdAt;
+
+    @OneToMany(mappedBy = "reservation", cascade = CascadeType.ALL, orphanRemoval = true)
+    @Builder.Default
+    private List<Reservations_items> reservationItems = new ArrayList<>();
 }
