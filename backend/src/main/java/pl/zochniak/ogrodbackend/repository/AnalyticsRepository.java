@@ -5,5 +5,5 @@ import java.util.List;
 
 public interface AnalyticsRepository extends JpaRepository<Analytics, Long> {
     List<Analytics> findByItemId(Long itemId);
-    List<Analytics> findByPeriodMonth(String periodMonth);
+    List<Analytics> findByMonth(String month);
 }

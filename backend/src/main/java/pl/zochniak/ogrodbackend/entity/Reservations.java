@@ -35,7 +35,7 @@ public class Reservations {
 
     @ManyToOne
     @JoinColumn(name = "item_id", nullable = false)
-    private Item item;
+    private Item itemId;
 
     @Column(name = "start_time", nullable = false)
     private LocalDateTime startTime;

@@ -35,8 +35,8 @@ public class Handover {
     @Column(name = "fuel_level", length = 30)
     private String fuelLevel;
 
-    @Column(name = "technical_condition_notes", columnDefinition = "TEXT")
-    private String technicalConditionNotes;
+    @Column(name = "note", columnDefinition = "TEXT")
+    private String note;
 
     @CreationTimestamp
     @Column(name = "created_at", updatable = false)

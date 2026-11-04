@@ -23,8 +23,8 @@ public class Payments {
     private Reservations reservation;
 
     @Enumerated(EnumType.STRING)
-    @Column(name = "payment_method", nullable = false, length = 30)
-    private PaymentType paymentMethod;
+    @Column(name = "payment_type", nullable = false, length = 30)
+    private PaymentType paymentType;
 
     @Column(nullable = false, precision = 10, scale = 2)
     private BigDecimal amount;

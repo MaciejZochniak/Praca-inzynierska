@@ -82,7 +82,7 @@ public class ReservationService {
                 .reservation(reservation)
                 .item(item)
                 .quantity(1)
-                .price(item.getPrice())
+                .unitPrice(item.getPrice())
                 .build();
 
         reservation.getReservationItems().add(itemDetail);
@@ -96,16 +96,16 @@ public class ReservationService {
                     .street(request.getStreet())
                     .city(request.getCity())
                     .postalCode(request.getPostalCode())
-                    .deliveryCost(BigDecimal.ZERO)
+                    .cost(BigDecimal.ZERO)
                     .build();
             deliveryRepository.save(delivery);
         }
 
         //inicjalizacja płatności
-        if (request.getPaymentMethod() != null){
+        if (request.getPaymentType() != null){
             Payments payment = Payments.builder()
                     .reservation(savedReservation)
-                    .paymentMethod(request.getPaymentMethod())
+                    .paymentType(request.getPaymentType())
                     .amount(totalCost)
                     .status(PaymentStatus.PENDING)
                     .build();

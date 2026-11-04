@@ -4,7 +4,7 @@ import lombok.*;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
-
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import org.hibernate.annotations.CreationTimestamp;
 
 @Entity
@@ -30,6 +30,7 @@ public class Category {
     @Column(name = "created_at", updatable = false)
     private LocalDateTime createdAt;
     
+    @JsonIgnore
     @OneToMany (mappedBy = "category", cascade = CascadeType.ALL)
     @Builder .Default
     private List<Item> items = new ArrayList<>();

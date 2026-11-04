@@ -34,9 +34,9 @@ public class Delivery {
     @Column(name = "postal_code", length = 10)
     private String postalCode;
 
-    @Column(name = "delivery_cost", precision = 10, scale = 2)
+    @Column(name = "cost", precision = 10, scale = 2)
     @Builder.Default
-    private BigDecimal deliveryCost = BigDecimal.ZERO;
+    private BigDecimal cost = BigDecimal.ZERO;
 
     @Column(name = "scheduled_time")
     private LocalDateTime scheduledTime;

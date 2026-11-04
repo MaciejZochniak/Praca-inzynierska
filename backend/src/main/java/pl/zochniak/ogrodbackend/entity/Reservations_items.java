@@ -27,6 +27,6 @@ public class Reservations_items {
     @Builder.Default
     private Integer quantity = 1;
 
-    @Column(name = "price", nullable = false, precision = 10, scale = 2)
-    private BigDecimal price;
+    @Column(name = "unit_price", nullable = false, precision = 10, scale = 2)
+    private BigDecimal unitPrice;
 }
