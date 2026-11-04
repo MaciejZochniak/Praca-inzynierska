@@ -9,10 +9,10 @@ import org.springframework.data.repository.query.Param;
 
 public interface ReservationsRepository extends JpaRepository<Reservations, Long> {
     List<Reservations> findByUserId(Long userId);
-    List<Reservations> findByAssignedEmployeeId(Long employeeId);
+    List<Reservations> findByEmployeeId(Long employeeId);
     List<Reservations> findByStatus(ReservationStatus status);
     @Query("SELECT r FROM Reservations r "+"JOIN r.reservationItems ri "+"WHERE ri.item.id = :itemId "+
-           "AND r.status <> :excludedStatus "+"AND r.startDate < :endDate "+"AND r.endDate > :startDate")
+           "AND r.status <> :excludedStatus "+"AND r.startTime < :endDate "+"AND r.endTime > :startDate")
     List<Reservations> findConflictingReservations(
             @Param("itemId") Long itemId, @Param("startDate") LocalDateTime startDate,
             @Param("endDate") LocalDateTime endDate
