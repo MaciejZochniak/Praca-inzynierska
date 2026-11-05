@@ -1,15 +1,35 @@
 services:
-  postgres:
+  db:
     image: postgres:16-alpine
-    container_name: praca-inzynierska
+    container_name: ogrod-postgres
     environment:
       POSTGRES_DB: ogrod_db
-      POSTGRES_USER: admin
-      POSTGRES_PASSWORD: admin
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
     ports:
-    - "5432:5432"
+      - "5432:5432"
     volumes:
-    - pgdata:/var/lib/postgresql/data
+      - pgdata:/var/lib/postgresql/data
+
+  backend:
+    build: ../backend
+    container_name: ogrod-backend
+    depends_on:
+      - db
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://db:5432/ogrod_db
+      SPRING_DATASOURCE_USERNAME: postgres
+      SPRING_DATASOURCE_PASSWORD: password
+    ports:
+      - "8080:8080"
+
+  frontend:
+    build: ../frontend
+    container_name: ogrod-frontend
+    depends_on:
+      - backend
+    ports:
+      - "5173:5173"
 
 volumes:
   pgdata:

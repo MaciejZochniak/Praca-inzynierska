@@ -29,5 +29,10 @@ public class ReservationRequest {
     private String postalCode;
 
     //sposób płatności
-    private PaymentType paymentMethod;
+    private PaymentType paymentType;
+
+    public PaymentType getPaymentType() {
+        // TODO Auto-generated method stub
+        throw new UnsupportedOperationException("Unimplemented method 'getPaymentType'");
+    }
 }
