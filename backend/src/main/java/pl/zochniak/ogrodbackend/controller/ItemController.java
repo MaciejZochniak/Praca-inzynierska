@@ -11,7 +11,7 @@ import java.util.List;
 @RestController
 @RequestMapping("/api/items")
 @RequiredArgsConstructor
-@CrossOrigin(origins = {"http://localhost:3000", "http://localhost:5173"})
+@CrossOrigin(origins = {"http://localhost:5173"})
 public class ItemController {
     private final ItemRepository itemRepository;
     @GetMapping
