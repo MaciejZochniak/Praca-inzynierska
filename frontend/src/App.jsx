@@ -1,5 +1,7 @@
 import { useEffect, useState, useMemo } from 'react'
+import { BrowserRouter, Routes, Route, Link, useNavigate } from 'react-router-dom'
 import logoImage from './assets/GardenBookingLogo.png'
+import AuthPage from './AuthPage'
 
 const THEME = {
   primary: '#556B2F',
@@ -11,7 +13,6 @@ const THEME = {
   white: '#ffffff'
 }
 
-// Rozdzielone słowniki kategorii dla sprzętu i usług
 const EQUIPMENT_CATEGORIES = [
   { id: 'ALL', name: 'Wszystkie kategorie sprzętu' },
   { id: '1', name: 'Kosiarki i aeratory' },
@@ -28,18 +29,34 @@ const SERVICE_CATEGORIES = [
   { id: '13', name: 'Karczowanie i porządkowanie działki' }
 ]
 
-function App() {
+function HomePage({ currentUser, onLogout }) {
+  const navigate = useNavigate()
   const [items, setItems] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
 
   // Filtrowanie i wyszukiwanie
-  const [offerType, setOfferType] = useState('ALL') // 'ALL' | 'EQUIPMENT' | 'SERVICE'
+  const [offerType, setOfferType] = useState('ALL')
   const [searchQuery, setSearchQuery] = useState('')
   const [selectedCategory, setSelectedCategory] = useState('ALL')
   const [sortBy, setSortBy] = useState('DEFAULT')
 
-  // Pobieranie danych z backendu Spring Boot
+  // Stan rezerwacji (Modal)
+  const [selectedItem, setSelectedItem] = useState(null)
+  const [formData, setFormData] = useState({
+    startDate: '',
+    endDate: '',
+    guestName: '',
+    guestEmail: '',
+    guestPhone: '',
+    deliveryType: 'PICKUP',
+    street: '',
+    city: '',
+    postalCode: ''
+  })
+  const [statusMessage, setStatusMessage] = useState(null)
+  const [submitting, setSubmitting] = useState(false)
+
   useEffect(() => {
     fetch('http://localhost:8080/api/items')
       .then((res) => {
@@ -62,7 +79,6 @@ function App() {
     setSelectedCategory('ALL')
   }
 
-  // Dostępne kategorie zależnie od wybranego trybu
   const currentCategories = useMemo(() => {
     if (offerType === 'SERVICE') return SERVICE_CATEGORIES
     if (offerType === 'EQUIPMENT') return EQUIPMENT_CATEGORIES
@@ -73,7 +89,6 @@ function App() {
     ]
   }, [offerType])
 
-  // Filtrowanie i sortowanie ofert
   const processedItems = useMemo(() => {
     const filtered = items.filter((item) => {
       const matchesSearch = item.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -103,7 +118,6 @@ function App() {
     })
   }, [items, searchQuery, offerType, selectedCategory, sortBy])
 
-  // Płynne przewijanie do katalogu
   const scrollToCatalog = (type = null) => {
     if (type) handleOfferTypeChange(type)
     const catalogSection = document.getElementById('catalog-section')
@@ -112,448 +126,253 @@ function App() {
     }
   }
 
+  const calculateTotal = () => {
+    if (!selectedItem || !formData.startDate || !formData.endDate) return 0
+    const start = new Date(formData.startDate)
+    const end = new Date(formData.endDate)
+    const diffTime = end - start
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24))
+    const days = diffDays > 0 ? diffDays : 1
+    const deliveryCost = formData.deliveryType === 'DELIVERY' ? 50 : 0
+    return (days * selectedItem.price) + deliveryCost
+  }
+
+  const handleSubmitReservation = async (e) => {
+    e.preventDefault()
+    setSubmitting(true)
+    setStatusMessage(null)
+
+    const payload = {
+      itemId: selectedItem.id,
+      startDate: formData.startDate,
+      endDate: formData.endDate,
+      userId: currentUser ? currentUser.userId : null,
+      guestName: currentUser ? null : formData.guestName,
+      guestEmail: currentUser ? null : formData.guestEmail,
+      guestPhone: currentUser ? null : formData.guestPhone,
+      deliveryType: formData.deliveryType,
+      street: formData.deliveryType === 'DELIVERY' ? formData.street : '',
+      city: formData.deliveryType === 'DELIVERY' ? formData.city : '',
+      postalCode: formData.deliveryType === 'DELIVERY' ? formData.postalCode : '',
+      paymentType: 'BLIK'
+    }
+
+    try {
+      const response = await fetch('http://localhost:8080/api/reservations', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      })
+
+      const result = await response.json()
+
+      if (response.ok) {
+        setStatusMessage({ type: 'success', text: result.message || 'Rezerwacja została pomyślnie złożona!' })
+      } else {
+        setStatusMessage({ type: 'error', text: result.message || 'Wybrany termin koliduje z inną rezerwacją.' })
+      }
+    } catch {
+      setStatusMessage({ type: 'error', text: 'Błąd połączenia z serwerem.' })
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
   return (
-    <div style={{ 
-      minHeight: '100vh', 
-      width: '100%', 
-      margin: 0, 
-      padding: 0, 
-      backgroundColor: '#fafaf9', 
-      color: THEME.textDark, 
-      fontFamily: 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
-      boxSizing: 'border-box',
-      overflowX: 'hidden'
-    }}>
-
-      {/* RESPONSYWNOŚĆ DO NAVBARA */}
-      <style>{`
-        @media (max-width: 640px) {
-          .brand-text-container {
-            display: none !important;
-          }
-          .nav-buttons-container button {
-            padding: 6px 12px !important;
-            font-size: 0.8rem !important;
-          }
-          .main-navbar {
-            padding: 0 1rem !important;
-          }
-        }
-      `}</style>
-
-      {/* 1. NAVBAR */}
-      <nav className="main-navbar" style={{ 
-        position: 'fixed',
-        top: 0,
-        left: 0,
-        right: 0,
-        height: '70px',
-        backgroundColor: THEME.white, 
-        borderBottom: `2px solid ${THEME.surface}`, 
-        zIndex: 100, 
-        padding: '0 2rem', 
-        width: '100%', 
-        boxSizing: 'border-box',
-        display: 'flex',
-        alignItems: 'center',
-        boxShadow: '0 2px 8px rgba(0,0,0,0.06)'
-      }}>
-        <div style={{ 
-          maxWidth: '1280px', 
-          margin: '0 auto', 
-          display: 'flex', 
-          justifyContent: 'space-between', 
-          alignItems: 'center',
-          width: '100%' 
-        }}>
-
+    <div style={{ minHeight: '100vh', width: '100%', margin: 0, padding: 0, backgroundColor: '#fafaf9', color: THEME.textDark, fontFamily: 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif' }}>
+      
+      {/* NAVBAR */}
+      <nav style={{ position: 'fixed', top: 0, left: 0, right: 0, height: '70px', backgroundColor: THEME.white, borderBottom: `2px solid ${THEME.surface}`, zIndex: 100, padding: '0 2rem', display: 'flex', alignItems: 'center', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
+        <div style={{ maxWidth: '1280px', margin: '0 auto', display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
+          
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', cursor: 'pointer' }} onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}>
-            <img 
-              src={logoImage} 
-              alt="GardenBooking Logo" 
-              style={{ height: '42px', width: 'auto', objectFit: 'contain' }}
-            />
-            <div className="brand-text-container">
+            <img src={logoImage} alt="GardenBooking Logo" style={{ height: '42px', width: 'auto', objectFit: 'contain' }} />
+            <div>
               <span style={{ fontSize: '1.3rem', fontWeight: 800, color: THEME.primary, letterSpacing: '-0.5px', display: 'block', lineHeight: 1.1 }}>
                 Garden<span style={{ color: THEME.accent, fontWeight: 700 }}>Booking</span>
               </span>
-              <span style={{ fontSize: '0.68rem', display: 'block', color: THEME.textMuted, fontWeight: 600, letterSpacing: '0.5px' }}>
+              <span style={{ fontSize: '0.68rem', display: 'block', color: THEME.textMuted, fontWeight: 600 }}>
                 WYPOŻYCZALNIA SPRZĘTU I USŁUGI OGRODNICZE
               </span>
             </div>
           </div>
 
-          <div className="nav-buttons-container" style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-            <button 
-              onClick={() => alert('Moduł logowania w przygotowaniu')}
-              style={{ 
-                backgroundColor: THEME.white, 
-                color: THEME.primary, 
-                border: `1.5px solid ${THEME.primary}`, 
-                padding: '8px 16px', 
-                borderRadius: '6px', 
-                fontSize: '0.88rem', 
-                fontWeight: 700, 
-                cursor: 'pointer',
-                whiteSpace: 'nowrap'
-              }}
-            >
-              Zaloguj się
-            </button>
-            <button 
-              onClick={() => alert('Moduł rejestracji w przygotowaniu')}
-              style={{ 
-                backgroundColor: THEME.primary, 
-                color: THEME.white, 
-                border: 'none', 
-                padding: '8px 16px', 
-                borderRadius: '6px', 
-                fontSize: '0.88rem', 
-                fontWeight: 700, 
-                cursor: 'pointer',
-                whiteSpace: 'nowrap'
-              }}
-            >
-              Zarejestruj się
-            </button>
+          {/* btn uzytkownika */}
+          <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
+            {currentUser ? (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                <button
+                  type="button"
+                  onClick={() => alert(`Przejście do panelu konta: ${currentUser.firstName || currentUser.email}`)}
+                  title="Panel konta użytkownika"
+                  style={{
+                    backgroundColor: 'transparent',
+                    border: `1.5px solid ${THEME.primary}`,
+                    color: THEME.primary,
+                    padding: '7px 14px',
+                    borderRadius: '2px',
+                    fontSize: '0.88rem',
+                    fontWeight: 700,
+                    cursor: 'pointer'
+                  }}
+                >
+                  {currentUser.firstName && currentUser.lastName 
+                    ? `${currentUser.firstName} ${currentUser.lastName}`
+                    : (currentUser.firstName || currentUser.email)}
+                </button>
+                <button
+                  onClick={onLogout}
+                  style={{
+                    backgroundColor: THEME.surface,
+                    color: THEME.primary,
+                    border: `1px solid ${THEME.border}`,
+                    padding: '7px 14px',
+                    borderRadius: '2px',
+                    fontSize: '0.85rem',
+                    fontWeight: 700,
+                    cursor: 'pointer'
+                  }}
+                >
+                  Wyloguj
+                </button>
+              </div>
+            ) : (
+              <button 
+                onClick={() => navigate('/auth')}
+                style={{ 
+                  backgroundColor: THEME.primary, 
+                  color: THEME.white, 
+                  border: 'none', 
+                  padding: '8px 18px', 
+                  borderRadius: '2px', 
+                  fontSize: '0.88rem', 
+                  fontWeight: 700, 
+                  cursor: 'pointer' 
+                }}
+              >
+                Logowanie
+              </button>
+            )}
           </div>
 
         </div>
       </nav>
 
-      {/* 2. EKRAN POWITALNY */}
-      <div style={{ 
-        minHeight: '100vh',
-        paddingTop: '70px',
-        display: 'flex', 
-        flexDirection: 'column', 
-        justifyContent: 'space-between',
-        backgroundColor: THEME.primary,
-        boxSizing: 'border-box'
-      }}>
-
+      {/* starting page */}
+      <div style={{ minHeight: '100vh', paddingTop: '70px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', backgroundColor: THEME.primary }}>
         <div style={{ height: '1.5rem' }}></div>
-
-        <div style={{ 
-          maxWidth: '960px', 
-          margin: '0 auto', 
-          width: '100%', 
-          padding: '1rem 1.5rem', 
-          textAlign: 'center',
-          boxSizing: 'border-box'
-        }}>
-          <h1 style={{ fontSize: '2.2rem', fontWeight: 800, color: THEME.white, margin: '0 0 0.5rem 0' }}>
-            Wybierz czego potrzebujesz
-          </h1>
-          <p style={{ fontSize: '1rem', color: THEME.surface, margin: '0 0 2rem 0' }}>
-            Wypożycz maszynę do samodzielnej pracy lub zleć wykonanie zadania w ogrodzie.
-          </p>
+        <div style={{ maxWidth: '960px', margin: '0 auto', width: '100%', padding: '1rem 1.5rem', textAlign: 'center' }}>
+          <h1 style={{ fontSize: '2.2rem', fontWeight: 800, color: THEME.white, margin: '0 0 0.5rem 0' }}>Wybierz czego potrzebujesz</h1>
+          <p style={{ fontSize: '1rem', color: THEME.surface, margin: '0 0 2rem 0' }}>Wypożycz maszynę do samodzielnej pracy lub zleć wykonanie zadania w ogrodzie.</p>
 
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '1.5rem' }}>
-
-            {/* Kafel -> Sprzęt */}
-            <div 
-              onClick={() => scrollToCatalog('EQUIPMENT')}
-              style={{
-                backgroundColor: THEME.white,
-                borderRadius: '16px',
-                padding: '2.2rem 1.5rem',
-                cursor: 'pointer',
-                boxShadow: '0 12px 25px rgba(0,0,0,0.18)',
-                display: 'flex',
-                flexDirection: 'column',
-                justifyContent: 'center',
-                alignItems: 'center',
-                textAlign: 'center',
-                border: `3px solid transparent`,
-                transition: 'transform 0.15s ease, box-shadow 0.15s ease'
-              }}
-              onMouseEnter={(e) => { e.currentTarget.style.transform = 'translateY(-4px)' }}
-              onMouseLeave={(e) => { e.currentTarget.style.transform = 'translateY(0)' }}
-            >
-              <h2 style={{ fontSize: '1.6rem', fontWeight: 800, color: THEME.primary, margin: '0 0 0.5rem 0' }}>
-                Wypożycz sprzęt
-              </h2>
-              <span style={{ fontSize: '0.9rem', color: THEME.textMuted }}>
-                Kosiarki, aeratory, glebogryzarki i inne maszyny
-              </span>
+            <div onClick={() => scrollToCatalog('EQUIPMENT')} style={{ backgroundColor: THEME.white, borderRadius: '2px', padding: '2.2rem 1.5rem', cursor: 'pointer', textAlign: 'center' }}>
+              <h2 style={{ fontSize: '1.6rem', fontWeight: 800, color: THEME.primary, margin: '0 0 0.5rem 0' }}>Wypożycz sprzęt</h2>
+              <span style={{ fontSize: '0.9rem', color: THEME.textMuted }}>Kosiarki, aeratory, glebogryzarki i inne maszyny</span>
             </div>
-
-            {/* Kafel -> Usługi */}
-            <div 
-              onClick={() => scrollToCatalog('SERVICE')}
-              style={{
-                backgroundColor: THEME.white,
-                borderRadius: '16px',
-                padding: '2.2rem 1.5rem',
-                cursor: 'pointer',
-                boxShadow: '0 12px 25px rgba(0,0,0,0.18)',
-                display: 'flex',
-                flexDirection: 'column',
-                justifyContent: 'center',
-                alignItems: 'center',
-                textAlign: 'center',
-                border: `3px solid transparent`,
-                transition: 'transform 0.15s ease, box-shadow 0.15s ease'
-              }}
-              onMouseEnter={(e) => { e.currentTarget.style.transform = 'translateY(-4px)' }}
-              onMouseLeave={(e) => { e.currentTarget.style.transform = 'translateY(0)' }}
-            >
-              <h2 style={{ fontSize: '1.6rem', fontWeight: 800, color: THEME.primary, margin: '0 0 0.5rem 0' }}>
-                Zamów usługę
-              </h2>
-              <span style={{ fontSize: '0.9rem', color: THEME.textMuted }}>
-                Koszenie, aeracja oraz kompleksowe prace ogrodowe
-              </span>
+            <div onClick={() => scrollToCatalog('SERVICE')} style={{ backgroundColor: THEME.white, borderRadius: '2px', padding: '2.2rem 1.5rem', cursor: 'pointer', textAlign: 'center' }}>
+              <h2 style={{ fontSize: '1.6rem', fontWeight: 800, color: THEME.primary, margin: '0 0 0.5rem 0' }}>Zamów usługę</h2>
+              <span style={{ fontSize: '0.9rem', color: THEME.textMuted }}>Koszenie, aeracja oraz kompleksowe prace ogrodowe</span>
             </div>
-
           </div>
         </div>
 
-        <div 
-          onClick={() => scrollToCatalog('ALL')}
-          style={{ 
-            textAlign: 'center', 
-            paddingBottom: '2rem', 
-            cursor: 'pointer',
-            color: THEME.surface,
-            userSelect: 'none'
-          }}
-        >
-          <div style={{ fontSize: '0.85rem', fontWeight: 700, letterSpacing: '0.5px', marginBottom: '4px' }}>
-            lub przeglądaj całą ofertę
-          </div>
-          <div style={{ fontSize: '1.5rem', lineHeight: 1 }}>
-            ↓
-          </div>
+        <div onClick={() => scrollToCatalog('ALL')} style={{ textAlign: 'center', paddingBottom: '2rem', cursor: 'pointer', color: THEME.surface }}>
+          <div style={{ fontSize: '0.85rem', fontWeight: 700 }}>lub przeglądaj całą ofertę</div>
+          <div style={{ fontSize: '1.5rem' }}>↓</div>
         </div>
-
       </div>
 
-      {/* 3. KATALOG OFERT */}
-      <main id="catalog-section" style={{ 
-        maxWidth: '1280px', 
-        margin: '0 auto', 
-        padding: '3.5rem 1.25rem 2.5rem 1.25rem', 
-        width: '100%', 
-        boxSizing: 'border-box' 
-      }}>
-
-        {/* Zakładki */}
-        <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1.5rem', borderBottom: `2px solid ${THEME.surface}`, paddingBottom: '0.75rem', overflowX: 'auto' }}>
+      {/* oferty */}
+      <main id="catalog-section" style={{ maxWidth: '1280px', margin: '0 auto', padding: '3.5rem 1.25rem 2.5rem 1.25rem' }}>
+        <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1.5rem', borderBottom: `2px solid ${THEME.surface}`, paddingBottom: '0.75rem' }}>
           {[
             { id: 'ALL', label: 'Wszystkie pozycje' },
             { id: 'EQUIPMENT', label: 'Sprzęt ogrodniczy' },
             { id: 'SERVICE', label: 'Usługi ogrodnicze' }
-          ].map((tab) => {
-            const isActive = offerType === tab.id
-            return (
-              <button
-                key={tab.id}
-                onClick={() => handleOfferTypeChange(tab.id)}
-                style={{
-                  padding: '7px 18px',
-                  borderRadius: '20px',
-                  border: 'none',
-                  fontSize: '0.88rem',
-                  fontWeight: 700,
-                  cursor: 'pointer',
-                  backgroundColor: isActive ? THEME.primary : THEME.surface,
-                  color: isActive ? THEME.white : THEME.primary,
-                  whiteSpace: 'nowrap',
-                  transition: 'background-color 0.15s ease'
-                }}
-              >
-                {tab.label}
-              </button>
-            )
-          })}
+          ].map((tab) => (
+            <button
+              key={tab.id}
+              onClick={() => handleOfferTypeChange(tab.id)}
+              style={{
+                padding: '7px 18px',
+                borderRadius: '2px',
+                border: 'none',
+                fontSize: '0.88rem',
+                fontWeight: 700,
+                cursor: 'pointer',
+                backgroundColor: offerType === tab.id ? THEME.primary : THEME.surface,
+                color: offerType === tab.id ? THEME.white : THEME.primary
+              }}
+            >
+              {tab.label}
+            </button>
+          ))}
         </div>
 
-        {/* Panel filtrów i wyszukiwarki */}
-        <div style={{ 
-          backgroundColor: THEME.white, 
-          padding: '1.25rem', 
-          borderRadius: '12px', 
-          boxShadow: '0 1px 5px rgba(85, 107, 47, 0.08)', 
-          border: `1.5px solid ${THEME.surface}`, 
-          marginBottom: '2rem', 
-          display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))',
-          gap: '1rem',
-          alignItems: 'center',
-          boxSizing: 'border-box'
-        }}>
-
-          {/* Wyszukiwarka */}
+        {/* filtry */}
+        <div style={{ backgroundColor: THEME.white, padding: '1.25rem', borderRadius: '2px', border: `1.5px solid ${THEME.surface}`, marginBottom: '2rem', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '1rem' }}>
           <div>
-            <label style={{ fontSize: '0.78rem', fontWeight: 700, color: THEME.textMuted, display: 'block', marginBottom: '4px' }}>
-              Wyszukaj po nazwie
-            </label>
+            <label style={{ fontSize: '0.78rem', fontWeight: 700, color: THEME.textMuted, display: 'block', marginBottom: '4px' }}>Wyszukaj po nazwie</label>
             <input
               type="text"
-              placeholder="np. kosiarka spalinowa, aeracja..."
+              placeholder="np. kosiarka spalinowa..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              style={{ 
-                width: '100%', 
-                padding: '9px 12px', 
-                borderRadius: '7px', 
-                border: `1.5px solid ${THEME.border}`, 
-                fontSize: '0.9rem',
-                backgroundColor: THEME.white,
-                color: THEME.textDark,
-                outline: 'none',
-                boxSizing: 'border-box'
-              }}
+              style={{ width: '100%', padding: '9px 12px', borderRadius: '2px', border: `1.5px solid ${THEME.border}`, outline: 'none', boxSizing: 'border-box' }}
             />
           </div>
 
-          {/* Kategorie */}
           <div>
-            <label style={{ fontSize: '0.78rem', fontWeight: 700, color: THEME.textMuted, display: 'block', marginBottom: '4px' }}>
-              Kategoria {offerType === 'EQUIPMENT' ? '(sprzęt)' : offerType === 'SERVICE' ? '(usługi)' : ''}
-            </label>
+            <label style={{ fontSize: '0.78rem', fontWeight: 700, color: THEME.textMuted, display: 'block', marginBottom: '4px' }}>Kategoria</label>
             <select
               value={selectedCategory}
               onChange={(e) => setSelectedCategory(e.target.value)}
-              style={{
-                width: '100%',
-                padding: '9px 12px',
-                borderRadius: '7px',
-                border: `1.5px solid ${THEME.border}`,
-                fontSize: '0.9rem',
-                backgroundColor: THEME.white,
-                color: THEME.textDark,
-                outline: 'none',
-                cursor: 'pointer',
-                boxSizing: 'border-box'
-              }}
+              style={{ width: '100%', padding: '9px 12px', borderRadius: '2px', border: `1.5px solid ${THEME.border}`, outline: 'none', boxSizing: 'border-box' }}
             >
               {currentCategories.map((cat) => (
-                <option key={cat.id} value={cat.id}>
-                  {cat.name}
-                </option>
+                <option key={cat.id} value={cat.id}>{cat.name}</option>
               ))}
             </select>
           </div>
 
-          {/* Sortowanie */}
           <div>
-            <label style={{ fontSize: '0.78rem', fontWeight: 700, color: THEME.textMuted, display: 'block', marginBottom: '4px' }}>
-              Sortuj według
-            </label>
+            <label style={{ fontSize: '0.78rem', fontWeight: 700, color: THEME.textMuted, display: 'block', marginBottom: '4px' }}>Sortuj według</label>
             <select
               value={sortBy}
               onChange={(e) => setSortBy(e.target.value)}
-              style={{
-                width: '100%',
-                padding: '9px 12px',
-                borderRadius: '7px',
-                border: `1.5px solid ${THEME.border}`,
-                fontSize: '0.9rem',
-                backgroundColor: THEME.white,
-                color: THEME.textDark,
-                outline: 'none',
-                cursor: 'pointer',
-                boxSizing: 'border-box'
-              }}
+              style={{ width: '100%', padding: '9px 12px', borderRadius: '2px', border: `1.5px solid ${THEME.border}`, outline: 'none', boxSizing: 'border-box' }}
             >
-              <option value="DEFAULT">Domyślnie (polecane)</option>
-              <option value="PRICE_ASC">Cena: od najniższej</option>
-              <option value="PRICE_DESC">Cena: od najwyższej</option>
+              <option value="DEFAULT">Domyślnie</option>
+              <option value="PRICE_ASC">Cena: rosnąco</option>
+              <option value="PRICE_DESC">Cena: malejąco</option>
               <option value="NAME_ASC">Nazwa: A - Z</option>
               <option value="NAME_DESC">Nazwa: Z - A</option>
             </select>
           </div>
-
-        </div>
-
-        {/* Nagłówek katalogu */}
-        <div style={{ marginBottom: '1.25rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <h2 style={{ fontSize: '1.3rem', fontWeight: 800, margin: 0, color: THEME.primary }}>
-            {offerType === 'EQUIPMENT' ? 'Sprzęt ogrodniczy' : offerType === 'SERVICE' ? 'Usługi ogrodnicze' : 'Wszystkie pozycje'} ({processedItems.length})
-          </h2>
         </div>
 
         {loading && <p style={{ textAlign: 'center', padding: '3rem', color: THEME.textMuted }}>Ładowanie katalogu...</p>}
-        {error && <p style={{ color: '#dc2626', background: '#fee2e2', padding: '1rem', borderRadius: '8px' }}>Błąd pobierania: {error}</p>}
+        {error && <p style={{ color: '#dc2626', background: '#fee2e2', padding: '1rem', borderRadius: '2px' }}>Błąd: {error}</p>}
 
-        {!loading && processedItems.length === 0 && (
-          <div style={{ textAlign: 'center', padding: '3rem 1.5rem', backgroundColor: THEME.white, borderRadius: '10px', border: `1.5px dashed ${THEME.border}` }}>
-            <p style={{ margin: 0, color: THEME.textMuted, fontSize: '0.95rem' }}>Brak ofert spełniających wybrane kryteria.</p>
-          </div>
-        )}
-
-        {/* Siatka kart */}
-        <div style={{ 
-          display: 'grid', 
-          gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', 
-          gap: '1.5rem',
-          width: '100%',
-          boxSizing: 'border-box'
-        }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: '1.5rem' }}>
           {processedItems.map((item) => (
-            <div 
-              key={item.id} 
-              style={{ 
-                backgroundColor: THEME.white, 
-                border: `1.5px solid ${THEME.surface}`, 
-                borderRadius: '12px', 
-                overflow: 'hidden', 
-                display: 'flex', 
-                flexDirection: 'column', 
-                boxShadow: '0 2px 5px rgba(85, 107, 47, 0.06)' 
-              }}
-            >
+            <div key={item.id} style={{ backgroundColor: THEME.white, border: `1.5px solid ${THEME.surface}`, borderRadius: '2px', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
               <div style={{ position: 'relative', width: '100%', height: '200px', backgroundColor: THEME.surface }}>
-                <img
-                  src={`http://localhost:8080${item.imageUrl}`}
-                  alt={item.name}
-                  style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-                  onError={(e) => { e.target.src = 'https://placehold.co/400x250?text=GardenBooking' }}
-                />
-                <span style={{ 
-                  position: 'absolute', 
-                  top: '10px', 
-                  right: '10px', 
-                  backgroundColor: item.isAvailable ? THEME.surface : '#fee2e2', 
-                  color: item.isAvailable ? THEME.primary : '#991b1b', 
-                  border: `1px solid ${item.isAvailable ? THEME.border : '#fca5a5'}`,
-                  fontSize: '0.72rem', 
-                  fontWeight: 800, 
-                  padding: '3px 8px', 
-                  borderRadius: '10px' 
-                }}>
+                <img src={`http://localhost:8080${item.imageUrl}`} alt={item.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} onError={(e) => { e.target.src = 'https://placehold.co/400x250?text=GardenBooking' }} />
+                <span style={{ position: 'absolute', top: '10px', right: '10px', backgroundColor: item.isAvailable ? THEME.surface : '#fee2e2', color: item.isAvailable ? THEME.primary : '#991b1b', fontSize: '0.72rem', fontWeight: 800, padding: '3px 8px', borderRadius: '2px' }}>
                   {item.isAvailable ? 'Dostępny' : 'Zajęty'}
                 </span>
               </div>
-
               <div style={{ padding: '1.15rem', display: 'flex', flexDirection: 'column', flex: 1 }}>
-                <h3 style={{ margin: '0 0 0.4rem 0', fontSize: '1.1rem', fontWeight: 700, color: THEME.textDark }}>{item.name}</h3>
-                <p style={{ margin: '0 0 1rem 0', fontSize: '0.82rem', color: THEME.textMuted, flex: 1, lineHeight: 1.5 }}>
-                  {item.description || 'Profesjonalna pozycja gotowa do rezerwacji.'}
-                </p>
-
+                <h3 style={{ margin: '0 0 0.4rem 0', fontSize: '1.1rem', fontWeight: 700 }}>{item.name}</h3>
+                <p style={{ margin: '0 0 1rem 0', fontSize: '0.82rem', color: THEME.textMuted, flex: 1 }}>{item.description}</p>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', paddingTop: '0.8rem', borderTop: `1px solid ${THEME.surface}` }}>
                   <div>
                     <span style={{ fontSize: '1.25rem', fontWeight: 800, color: THEME.primary }}>{item.price} zł</span>
                     <span style={{ fontSize: '0.8rem', color: THEME.textMuted }}> / doba</span>
                   </div>
-                  <button
-                    onClick={() => alert(`Rezerwacja pozycji: ${item.name}`)}
-                    disabled={!item.isAvailable}
-                    style={{
-                      backgroundColor: item.isAvailable ? THEME.primary : '#cbd5e1',
-                      color: THEME.white,
-                      border: 'none',
-                      padding: '7px 14px',
-                      borderRadius: '6px',
-                      fontSize: '0.85rem',
-                      fontWeight: 700,
-                      cursor: item.isAvailable ? 'pointer' : 'not-allowed'
-                    }}
-                  >
+                  <button onClick={() => { setSelectedItem(item); setStatusMessage(null) }} disabled={!item.isAvailable} style={{ backgroundColor: item.isAvailable ? THEME.primary : '#cbd5e1', color: THEME.white, border: 'none', padding: '7px 14px', borderRadius: '6px', fontSize: '0.85rem', fontWeight: 700, cursor: item.isAvailable ? 'pointer' : 'not-allowed' }}>
                     Zarezerwuj
                   </button>
                 </div>
@@ -563,61 +382,111 @@ function App() {
         </div>
       </main>
 
-      {/* 4. FOOTER */}
-      <footer style={{ 
-        backgroundColor: THEME.primary, 
-        color: THEME.surface, 
-        padding: '2.5rem 1.25rem 1.5rem 1.25rem', 
-        marginTop: '3.5rem',
-        borderTop: `2px solid ${THEME.border}`,
-        boxSizing: 'border-box',
-        width: '100%'
-      }}>
-        <div style={{ 
-          maxWidth: '1280px', 
-          margin: '0 auto', 
-          display: 'grid', 
-          gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', 
-          gap: '2rem', 
-          marginBottom: '2rem' 
-        }}>
-          <div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '0.8rem' }}>
-              <img src={logoImage} alt="GardenBooking" style={{ height: '32px', filter: 'brightness(0) invert(1)' }} />
-              <span style={{ fontSize: '1.25rem', fontWeight: 800, color: THEME.white }}>GardenBooking</span>
+      {/* rezerwacje */}
+      {selectedItem && (
+        <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(30, 41, 59, 0.65)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 150, padding: '1rem' }}>
+          <div style={{ backgroundColor: THEME.white, borderRadius: '14px', width: '100%', maxWidth: '520px', maxHeight: '90vh', overflowY: 'auto', padding: '1.5rem' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1.25rem' }}>
+              <div>
+                <span style={{ fontSize: '0.78rem', color: THEME.primary, fontWeight: 700, textTransform: 'uppercase' }}>
+                  {currentUser ? 'Rezerwacja dla klienta' : 'Formularz rezerwacji (Gość)'}
+                </span>
+                <h2 style={{ margin: '0.2rem 0 0 0', fontSize: '1.25rem' }}>{selectedItem.name}</h2>
+              </div>
+              <button onClick={() => setSelectedItem(null)} style={{ border: 'none', background: 'transparent', fontSize: '1.3rem', cursor: 'pointer' }}>✕</button>
             </div>
-            <p style={{ fontSize: '0.85rem', lineHeight: 1.5, margin: 0, color: THEME.surface }}>
-              Zintegrowany system rezerwacji maszyn i usług ogrodniczych.
-            </p>
-          </div>
 
-          <div>
-            <h4 style={{ color: THEME.white, fontSize: '0.95rem', fontWeight: 700, margin: '0 0 0.8rem 0' }}>Kontakt z nami</h4>
-            <ul style={{ listStyle: 'none', padding: 0, margin: 0, fontSize: '0.85rem', lineHeight: 1.8 }}>
-              <li>ul. Ogrodowa 15, 90-001 Łódź</li>
-              <li>Tel: +48 123 456 789</li>
-              <li>E-mail: kontakt@gardenbooking.pl</li>
-              <li>Pon. - Sob.: 7:00 - 19:00</li>
-            </ul>
-          </div>
+            {statusMessage && (
+              <div style={{ padding: '10px 14px', borderRadius: '2px', marginBottom: '1rem', backgroundColor: statusMessage.type === 'success' ? THEME.surface : '#fee2e2', color: statusMessage.type === 'success' ? THEME.primary : '#991b1b', fontSize: '0.88rem', fontWeight: 600 }}>
+                {statusMessage.text}
+              </div>
+            )}
 
-          <div>
-            <h4 style={{ color: THEME.white, fontSize: '0.95rem', fontWeight: 700, margin: '0 0 0.8rem 0' }}>Informacje</h4>
-            <ul style={{ listStyle: 'none', padding: 0, margin: 0, fontSize: '0.85rem', lineHeight: 1.8 }}>
-              <li>• Regulamin wypożyczalni</li>
-              <li>• Polityka prywatności i RODO</li>
-              <li>• Cennik transportu maszyn</li>
-              <li>• Protokół zdawczo-odbiorczy</li>
-            </ul>
+            <form onSubmit={handleSubmitReservation} style={{ display: 'flex', flexDirection: 'column', gap: '0.9rem' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.6rem' }}>
+                <label style={{ fontSize: '0.82rem', fontWeight: 600 }}>Data odbioru:
+                  <input type="datetime-local" required style={{ width: '100%', padding: '7px', marginTop: '3px', borderRadius: '2px', border: `1px solid ${THEME.border}`, boxSizing: 'border-box' }} onChange={(e) => setFormData({ ...formData, startDate: e.target.value })} />
+                </label>
+                <label style={{ fontSize: '0.82rem', fontWeight: 600 }}>Data zwrotu:
+                  <input type="datetime-local" required style={{ width: '100%', padding: '7px', marginTop: '3px', borderRadius: '2px', border: `1px solid ${THEME.border}`, boxSizing: 'border-box' }} onChange={(e) => setFormData({ ...formData, endDate: e.target.value })} />
+                </label>
+              </div>
+
+              {!currentUser ? (
+                <>
+                  <label style={{ fontSize: '0.82rem', fontWeight: 600 }}>Imię i nazwisko:
+                    <input type="text" required placeholder="np. Jan Kowalski" style={{ width: '100%', padding: '7px', marginTop: '3px', borderRadius: '2px', border: `1px solid ${THEME.border}`, boxSizing: 'border-box' }} onChange={(e) => setFormData({ ...formData, guestName: e.target.value })} />
+                  </label>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.6rem' }}>
+                    <label style={{ fontSize: '0.82rem', fontWeight: 600 }}>Adres e-mail:
+                      <input type="email" required placeholder="kontakt@domena.pl" style={{ width: '100%', padding: '7px', marginTop: '3px', borderRadius: '2px', border: `1px solid ${THEME.border}`, boxSizing: 'border-box' }} onChange={(e) => setFormData({ ...formData, guestEmail: e.target.value })} />
+                    </label>
+                    <label style={{ fontSize: '0.82rem', fontWeight: 600 }}>Numer telefonu:
+                      <input type="tel" required placeholder="123 456 789" style={{ width: '100%', padding: '7px', marginTop: '3px', borderRadius: '2px', border: `1px solid ${THEME.border}`, boxSizing: 'border-box' }} onChange={(e) => setFormData({ ...formData, guestPhone: e.target.value })} />
+                    </label>
+                  </div>
+                </>
+              ) : (
+                <div style={{ padding: '8px 12px', backgroundColor: THEME.surface, borderRadius: '2px', border: `1px solid ${THEME.border}`, fontSize: '0.85rem' }}>
+                  Dane rezerwującego: <strong>{currentUser.firstName} {currentUser.lastName}</strong> ({currentUser.email})
+                </div>
+              )}
+
+              <label style={{ fontSize: '0.82rem', fontWeight: 600 }}>Opcja transportu:
+                <select style={{ width: '100%', padding: '7px', marginTop: '3px', borderRadius: '2px', border: `1px solid ${THEME.border}`, boxSizing: 'border-box' }} value={formData.deliveryType} onChange={(e) => setFormData({ ...formData, deliveryType: e.target.value })}>
+                  <option value="PICKUP">Odbiór osobisty w punkcie (0 zł)</option>
+                  <option value="DELIVERY">Dowóz sprzętu na wskazany adres (+50 zł)</option>
+                </select>
+              </label>
+
+              {formData.deliveryType === 'DELIVERY' && (
+                <div style={{ background: THEME.surface, padding: '9px', borderRadius: '2px', display: 'flex', flexDirection: 'column', gap: '6px', border: `1px solid ${THEME.border}`, boxSizing: 'border-box' }}>
+                  <input type="text" placeholder="Ulica i numer posesji" required style={{ padding: '7px', borderRadius: '2px', border: `1px solid ${THEME.border}`, boxSizing: 'border-box' }} onChange={(e) => setFormData({ ...formData, street: e.target.value })} />
+                  <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '6px' }}>
+                    <input type="text" placeholder="Miejscowość" required style={{ padding: '7px', borderRadius: '2px', border: `1px solid ${THEME.border}`, boxSizing: 'border-box' }} onChange={(e) => setFormData({ ...formData, city: e.target.value })} />
+                    <input type="text" placeholder="Kod pocztowy" required style={{ padding: '7px', borderRadius: '2px', border: `1px solid ${THEME.border}`, boxSizing: 'border-box' }} onChange={(e) => setFormData({ ...formData, postalCode: e.target.value })} />
+                  </div>
+                </div>
+              )}
+
+              <div style={{ backgroundColor: THEME.surface, border: `1.5px solid ${THEME.border}`, padding: '10px', borderRadius: '2px', textAlign: 'right' }}>
+                <span style={{ fontSize: '0.85rem', color: THEME.primary, fontWeight: 600 }}>Łączny szacowany koszt: </span>
+                <strong style={{ fontSize: '1.25rem', color: THEME.primary }}>{calculateTotal()} zł</strong>
+              </div>
+
+              <div style={{ display: 'flex', gap: '0.6rem', marginTop: '0.4rem' }}>
+                <button type="button" onClick={() => setSelectedItem(null)} style={{ flex: 1, padding: '9px', backgroundColor: THEME.surface, border: `1px solid ${THEME.border}`, borderRadius: '2px', fontWeight: 600, cursor: 'pointer', color: THEME.primary }}>
+                  Anuluj
+                </button>
+                <button type="submit" disabled={submitting} style={{ flex: 2, padding: '9px', backgroundColor: THEME.primary, color: THEME.white, border: 'none', borderRadius: '2px', fontWeight: 700, cursor: 'pointer' }}>
+                  {submitting ? 'Przetwarzanie...' : 'Zatwierdź rezerwację'}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
-
-        <div style={{ borderTop: `1px solid rgba(239, 245, 210, 0.25)`, paddingTop: '1.25rem', textAlign: 'center', fontSize: '0.75rem', color: THEME.surface }}>
-          © {new Date().getFullYear()} GardenBooking. Wszelkie prawa zastrzeżone.
-        </div>
-      </footer>
+      )}
     </div>
   )
 }
 
-export default App
+export default function App() {
+  const [currentUser, setCurrentUser] = useState(() => {
+    const saved = localStorage.getItem('garden_user')
+    return saved ? JSON.parse(saved) : null
+  })
+
+  const handleLogout = () => {
+    localStorage.removeItem('garden_user')
+    setCurrentUser(null)
+  }
+
+  return (
+    <BrowserRouter>
+      <Routes>
+        <Route path="/" element={<HomePage currentUser={currentUser} onLogout={handleLogout} />} />
+        <Route path="/auth" element={<AuthPage onLoginSuccess={(user) => setCurrentUser(user)} />} />
+      </Routes>
+    </BrowserRouter>
+  )
+}
