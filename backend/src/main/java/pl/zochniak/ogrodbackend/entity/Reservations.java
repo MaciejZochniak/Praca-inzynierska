@@ -33,8 +33,8 @@ public class Reservations {
     @Column (name = "guest_phone", nullable = true, length = 20)
     private String guestPhone;
 
-    @ManyToOne
-    @JoinColumn(name = "item_id", nullable = false)
+    @ManyToOne(fetch = FetchType.EAGER)
+    @JoinColumn(name = "item_id", nullable = true)
     private Item itemId;
 
     @Column(name = "start_time", nullable = false)

@@ -27,11 +27,18 @@ public class Item {
     @Column(nullable = false, length = 200)
     private String name;
 
+    @Column(length = 100)
+    private String brand;
+
     @Column(columnDefinition = "TEXT")
     private String description;
 
     @Column(name = "price", nullable = false, precision = 10, scale = 2)
     private BigDecimal price;
+
+    @Column(nullable = false)
+    @Builder.Default
+    private Integer quantity = 1;
 
     @Column(name = "is_available", nullable = false)
     @Builder.Default

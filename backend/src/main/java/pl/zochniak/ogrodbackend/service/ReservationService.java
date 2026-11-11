@@ -22,7 +22,7 @@ public class ReservationService {
     private final UserRepository userRepository;
     private final DeliveryRepository deliveryRepository;
     private final PaymentsRepository paymentsRepository;
-
+    
     @Transactional(readOnly = true)
     public List<ReservationResponse> getReservationsByUserId(Long userId) {
         return reservationsRepository.findByUserId(userId).stream()
@@ -137,5 +137,9 @@ public class ReservationService {
                 .totalPrice(savedReservation.getTotalPrice())
                 .message("Sukces: Rezerwacja została utworzona. ID rezerwacji: " + savedReservation.getId())
                 .build();
+        
+    }
+    public List<Reservations> getActiveReservationsForItem(Long itemId) {
+        return reservationsRepository.findActiveByItemId(itemId);
     }
 }

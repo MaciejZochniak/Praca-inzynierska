@@ -1,18 +1,19 @@
 package pl.zochniak.ogrodbackend.controller;
-import pl.zochniak.ogrodbackend.dto.request.ReservationRequest;
-import pl.zochniak.ogrodbackend.dto.response.ReservationResponse;
-import pl.zochniak.ogrodbackend.entity.Reservations;
-import pl.zochniak.ogrodbackend.service.ReservationService;
+
 import lombok.RequiredArgsConstructor;
-import java.util.List;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import pl.zochniak.ogrodbackend.dto.request.ReservationRequest;
+import pl.zochniak.ogrodbackend.dto.response.ReservationResponse;
+import pl.zochniak.ogrodbackend.service.ReservationService;
+
+import java.util.List;
 
 @RestController
 @RequestMapping("/api/reservations")
 @RequiredArgsConstructor
-@CrossOrigin(origins = {"http://localhost:3000", "http://localhost:5173"})
+@CrossOrigin(origins = "*")
 public class ReservationController {
 
     private final ReservationService reservationService;
@@ -26,5 +27,19 @@ public class ReservationController {
     @GetMapping("/user/{userId}")
     public ResponseEntity<List<ReservationResponse>> getUserReservations(@PathVariable Long userId) {
         return ResponseEntity.ok(reservationService.getReservationsByUserId(userId));
+    }
+
+    @GetMapping("/item/{itemId}")
+    public ResponseEntity<List<ReservationResponse>> getItemAvailability(@PathVariable Long itemId) {
+        List<ReservationResponse> busySlots = reservationService.getActiveReservationsForItem(itemId)
+                .stream()
+                .map(r -> ReservationResponse.builder()
+                        .reservationId(r.getId())
+                        .startDate(r.getStartTime())
+                        .endDate(r.getEndTime())
+                        .status(r.getStatus())
+                        .build())
+                .toList();
+        return ResponseEntity.ok(busySlots);
     }
 }
