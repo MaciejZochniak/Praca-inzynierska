@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react'
-import { useNavigate, Link } from 'react-router-dom'
+import { useNavigate, Link, useLocation } from 'react-router-dom'
 import { 
   User, 
   Clock, 
@@ -35,7 +35,6 @@ const THEME = {
   borderDivider: '#e2e8f0'
 }
 
-// Sprawdzanie usługi
 function isServiceReservation(res) {
   const name = (res.itemName || '').toLowerCase()
   return (
@@ -50,7 +49,6 @@ function isServiceReservation(res) {
   )
 }
 
-// Kolory statusów (zielony, czerwony, standardowy szary)
 function getStatusConfig(status, isService) {
   switch (status) {
     case 'COMPLETED':
@@ -90,14 +88,12 @@ function getStatusConfig(status, isService) {
   }
 }
 
-// Typ dostawy
 function formatDelivery(res) {
   const type = res.deliveryType || res.delivery?.deliveryType
   if (type === 'DELIVERY') return { label: 'Dowóz', Icon: Truck }
   return { label: 'Odbiór osobisty', Icon: Store }
 }
 
-// Format płatności
 function formatPayment(res) {
   const method = res.paymentType || res.paymentMethod || res.payment?.paymentType
   let label = 'Gotówka'
@@ -111,26 +107,34 @@ function formatPayment(res) {
 
 export default function UserPage({ currentUser, onUserUpdate, onRebookItem }) {
   const navigate = useNavigate()
+  const location = useLocation()
 
-  // Autoryzacja
+  const queryTab = new URLSearchParams(location.search).get('tab')
+  const [activeTab, setActiveTab] = useState(queryTab === 'RESERVATIONS' ? 'RESERVATIONS' : 'PROFILE')
+
+  useEffect(() => {
+    const tabParam = new URLSearchParams(location.search).get('tab')
+    if (tabParam === 'RESERVATIONS') {
+      setActiveTab('RESERVATIONS')
+    } else if (tabParam === 'PROFILE') {
+      setActiveTab('PROFILE')
+    }
+  }, [location.search])
+
   useEffect(() => {
     if (!currentUser) {
       navigate('/auth')
     }
   }, [currentUser, navigate])
 
-  const [activeTab, setActiveTab] = useState('PROFILE')
   const [reservationCategory, setReservationCategory] = useState('ALL')
 
-  // Zwijanie tabel
   const [activeOpen, setActiveOpen] = useState(true)
   const [historyOpen, setHistoryOpen] = useState(true)
 
-  // Edycja danych
   const [editingField, setEditingField] = useState(null)
   const [isChangingPassword, setIsChangingPassword] = useState(false)
 
-  // Formularz profilu
   const [formData, setFormData] = useState({
     firstName: currentUser?.firstName || '',
     lastName: currentUser?.lastName || '',
@@ -141,11 +145,9 @@ export default function UserPage({ currentUser, onUserUpdate, onRebookItem }) {
   const [profileMsg, setProfileMsg] = useState(null)
   const [loading, setLoading] = useState(false)
 
-  // Rezerwacje
   const [reservations, setReservations] = useState([])
   const [resLoading, setResLoading] = useState(false)
 
-  // Pobieranie
   useEffect(() => {
     const uid = currentUser?.userId || currentUser?.id
     if (activeTab === 'RESERVATIONS' && uid) {
@@ -166,7 +168,6 @@ export default function UserPage({ currentUser, onUserUpdate, onRebookItem }) {
     }
   }, [activeTab, currentUser])
 
-  // Zapis zmian profilu
   const handleSave = async (e) => {
     if (e) e.preventDefault()
     setLoading(true)
@@ -205,7 +206,6 @@ export default function UserPage({ currentUser, onUserUpdate, onRebookItem }) {
     }
   }
 
-  // Filtrowanie
   const now = new Date()
 
   const filteredReservations = useMemo(() => {
@@ -249,21 +249,19 @@ export default function UserPage({ currentUser, onUserUpdate, onRebookItem }) {
       color: THEME.textDark,
       fontFamily: 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'
     }}>
-      {/* width do mobile */}
       <style>{`
-        @media (max-width: 900px) {
+        @media (max-width: 768px) {
           .desktop-table { display: none !important; }
           .mobile-cards { display: flex !important; }
           .panel-container { padding: 1rem 0.5rem !important; margin: 1rem auto !important; }
           .panel-header-btn { font-size: 0.85rem !important; padding: 10px 12px !important; }
         }
-        @media (min-width: 901px) {
+        @media (min-width: 769px) {
           .desktop-table { display: table !important; }
           .mobile-cards { display: none !important; }
         }
       `}</style>
 
-      {/* Nawigacja */}
       <nav style={{
         height: '65px',
         backgroundColor: THEME.white,
@@ -310,7 +308,6 @@ export default function UserPage({ currentUser, onUserUpdate, onRebookItem }) {
         </Link>
       </nav>
 
-      {/* Kontener główny */}
       <main className="panel-container" style={{ maxWidth: '1080px', margin: '2rem auto', padding: '0 1rem' }}>
         <div style={{
           backgroundColor: THEME.white,
@@ -319,7 +316,6 @@ export default function UserPage({ currentUser, onUserUpdate, onRebookItem }) {
           boxShadow: '0 1px 3px rgba(0,0,0,0.06)',
           overflow: 'hidden'
         }}>
-          {/* Zakładki */}
           <div style={{ display: 'flex', backgroundColor: '#f8fafc', borderBottom: `1px solid ${THEME.borderDivider}` }}>
             <button
               onClick={() => setActiveTab('PROFILE')}
@@ -366,7 +362,6 @@ export default function UserPage({ currentUser, onUserUpdate, onRebookItem }) {
           </div>
 
           <div style={{ padding: '1.75rem' }}>
-            {/* Komunikat */}
             {profileMsg && (
               <div style={{
                 padding: '10px 14px',
@@ -386,7 +381,6 @@ export default function UserPage({ currentUser, onUserUpdate, onRebookItem }) {
               </div>
             )}
 
-            {/* Profil */}
             {activeTab === 'PROFILE' && (
               <div>
                 <h3 style={{ margin: '0 0 1.25rem 0', fontSize: '1.15rem', color: THEME.textDark }}>
@@ -394,7 +388,6 @@ export default function UserPage({ currentUser, onUserUpdate, onRebookItem }) {
                 </h3>
 
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
-                  {/* Imię i nazwisko */}
                   <div style={{ padding: '1rem', backgroundColor: THEME.bgSoft, border: `1px solid ${THEME.borderDefault}`, borderRadius: '4px' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                       <div>
@@ -433,13 +426,11 @@ export default function UserPage({ currentUser, onUserUpdate, onRebookItem }) {
                     )}
                   </div>
 
-                  {/* Email */}
                   <div style={{ padding: '1rem', backgroundColor: THEME.bgSoft, border: `1px solid ${THEME.borderDefault}`, borderRadius: '4px' }}>
                     <span style={{ fontSize: '0.78rem', fontWeight: 600, color: THEME.textMuted, display: 'block' }}>Adres e-mail</span>
                     <span style={{ fontSize: '1rem', fontWeight: 700, color: THEME.textDark }}>{currentUser.email}</span>
                   </div>
 
-                  {/* Telefon */}
                   <div style={{ padding: '1rem', backgroundColor: THEME.bgSoft, border: `1px solid ${THEME.borderDefault}`, borderRadius: '4px' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                       <div>
@@ -477,7 +468,6 @@ export default function UserPage({ currentUser, onUserUpdate, onRebookItem }) {
                     )}
                   </div>
 
-                  {/* Hasło */}
                   <div style={{ padding: '1.25rem', backgroundColor: THEME.bgSoft, border: `1px solid ${THEME.borderDefault}`, borderRadius: '4px', marginTop: '0.5rem' }}>
                     {!isChangingPassword ? (
                       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -521,10 +511,8 @@ export default function UserPage({ currentUser, onUserUpdate, onRebookItem }) {
               </div>
             )}
 
-            {/*historia zamówień*/}
             {activeTab === 'RESERVATIONS' && (
               <div>
-                {/* Filtry kategorii */}
                 <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1.5rem', flexWrap: 'wrap' }}>
                   {[
                     { id: 'ALL', label: 'Wszystkie pozycje' },
@@ -556,8 +544,6 @@ export default function UserPage({ currentUser, onUserUpdate, onRebookItem }) {
                 {!resLoading && filteredReservations.length === 0 && (
                   <p style={{ color: THEME.textMuted, fontSize: '0.85rem', margin: '2rem 0' }}>Brak zamówień w wybranej kategorii.</p>
                 )}
-
-                {/* Bieżące i nadchodzące rezerwacje */}
                 <div style={{ marginBottom: '2rem', border: `1px solid ${THEME.borderDefault}`, borderRadius: '4px', overflow: 'hidden' }}>
                   <button
                     className="panel-header-btn"
@@ -599,7 +585,6 @@ export default function UserPage({ currentUser, onUserUpdate, onRebookItem }) {
                   )}
                 </div>
 
-                {/* Historia zamówień */}
                 <div style={{ border: `1px solid ${THEME.borderDefault}`, borderRadius: '4px', overflow: 'hidden' }}>
                   <button
                     className="panel-header-btn"
@@ -650,11 +635,9 @@ export default function UserPage({ currentUser, onUserUpdate, onRebookItem }) {
   )
 }
 
-// responsywność
 function ResponsiveReservationList({ reservations, onRebook, canRebook, showPayment }) {
   return (
     <>
-      {/*dekstop */}
       <table className="desktop-table" style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.84rem' }}>
         <thead>
           <tr style={{ backgroundColor: '#ffffff', borderBottom: `1px solid ${THEME.borderDivider}`, color: THEME.textMuted }}>
@@ -696,7 +679,6 @@ function ResponsiveReservationList({ reservations, onRebook, canRebook, showPaym
                 onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = '#f8fafc' }}
                 onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = THEME.white }}
               >
-                {/* Kategoria */}
                 <td style={{ padding: '10px 12px', whiteSpace: 'nowrap' }}>
                   <span style={{
                     display: 'inline-flex',
@@ -707,21 +689,19 @@ function ResponsiveReservationList({ reservations, onRebook, canRebook, showPaym
                     fontSize: '0.7rem',
                     fontWeight: 700,
                     textTransform: 'uppercase',
-                    backgroundColor: isService ? '#f1f5f9' : '#f1f5f9',
-                    color: isService ? '#334155' : '#334155',
-                    border: `1px solid ${isService ? '#cbd5e1' : '#cbd5e1'}`
+                    backgroundColor: isService ? '#f0fdf4' : '#f1f5f9',
+                    color: isService ? '#166534' : '#334155',
+                    border: `1px solid ${isService ? '#bbf7d0' : '#cbd5e1'}`
                   }}>
-
+                    {isService ? <Sprout size={11} /> : <Wrench size={11} />}
                     {isService ? 'Usługa' : 'Sprzęt'}
                   </span>
                 </td>
 
-                {/* Nazwa */}
                 <td style={{ padding: '10px 12px', fontWeight: 700, color: THEME.textDark }}>
                   {cleanName}
                 </td>
 
-                {/* Data */}
                 <td style={{ padding: '10px 12px', color: THEME.textMuted, whiteSpace: 'nowrap' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '0.8rem' }}>
                     <Calendar size={12} />
@@ -729,12 +709,10 @@ function ResponsiveReservationList({ reservations, onRebook, canRebook, showPaym
                   </div>
                 </td>
 
-                {/* Koszt */}
                 <td style={{ padding: '10px 12px', fontWeight: 700, color: THEME.textDark, whiteSpace: 'nowrap' }}>
                   {res.totalPrice} zł
                 </td>
 
-                {/* Dostawa */}
                 <td style={{ padding: '10px 12px', color: THEME.textDark, whiteSpace: 'nowrap' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '0.8rem' }}>
                     <delivery.Icon size={13} color={THEME.textMuted} />
@@ -742,7 +720,6 @@ function ResponsiveReservationList({ reservations, onRebook, canRebook, showPaym
                   </div>
                 </td>
 
-                {/* Płatność */}
                 {showPayment && (
                   <td style={{ padding: '10px 12px', color: THEME.textDark, whiteSpace: 'nowrap' }}>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
@@ -757,7 +734,6 @@ function ResponsiveReservationList({ reservations, onRebook, canRebook, showPaym
                   </td>
                 )}
 
-                {/* Status */}
                 <td style={{ padding: '10px 12px', whiteSpace: 'nowrap' }}>
                   <span style={{
                     display: 'inline-flex',
@@ -776,7 +752,6 @@ function ResponsiveReservationList({ reservations, onRebook, canRebook, showPaym
                   </span>
                 </td>
 
-                {/* Przycisk Ponów*/}
                 {canRebook && (
                   <td style={{ padding: '10px 12px', textAlign: 'right', whiteSpace: 'nowrap' }}>
                     {res.itemId && (
@@ -808,7 +783,6 @@ function ResponsiveReservationList({ reservations, onRebook, canRebook, showPaym
         </tbody>
       </table>
 
-      {/* mobile version*/}
       <div className="mobile-cards" style={{ display: 'none', flexDirection: 'column', gap: '0.75rem', padding: '0.75rem' }}>
         {reservations.map((res) => {
           const isService = isServiceReservation(res)
@@ -839,7 +813,6 @@ function ResponsiveReservationList({ reservations, onRebook, canRebook, showPaym
                 gap: '8px'
               }}
             >
-              {/* Kategoria i status */}
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <span style={{
                   display: 'inline-flex',
@@ -850,10 +823,11 @@ function ResponsiveReservationList({ reservations, onRebook, canRebook, showPaym
                   fontSize: '0.7rem',
                   fontWeight: 700,
                   textTransform: 'uppercase',
-                  backgroundColor: isService ? '#f1f5f9' : '#f1f5f9',
-                  color: isService ? '#334155' : '#334155',
-                  border: `1px solid ${isService ? '#cbd5e1' : '#cbd5e1'}`
+                  backgroundColor: isService ? '#f0fdf4' : '#f1f5f9',
+                  color: isService ? '#166534' : '#334155',
+                  border: `1px solid ${isService ? '#bbf7d0' : '#cbd5e1'}`
                 }}>
+                  {isService ? <Sprout size={11} /> : <Wrench size={11} />}
                   {isService ? 'Usługa' : 'Sprzęt'}
                 </span>
 
@@ -874,12 +848,10 @@ function ResponsiveReservationList({ reservations, onRebook, canRebook, showPaym
                 </span>
               </div>
 
-              {/* Nazwa */}
               <div style={{ fontWeight: 700, fontSize: '0.95rem', color: THEME.textDark }}>
                 {cleanName}
               </div>
 
-              {/* data, koszt, dostawa */}
               <div style={{ fontSize: '0.78rem', color: THEME.textMuted, display: 'flex', flexDirection: 'column', gap: '3px' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
                   <Calendar size={13} />
@@ -897,7 +869,6 @@ function ResponsiveReservationList({ reservations, onRebook, canRebook, showPaym
                 )}
               </div>
 
-              {/* Dolny pasek karty */}
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: `1px solid ${THEME.borderDivider}`, paddingTop: '6px', marginTop: '2px' }}>
                 <span style={{ fontSize: '0.88rem', fontWeight: 800, color: THEME.textDark }}>
                   {res.totalPrice} zł
