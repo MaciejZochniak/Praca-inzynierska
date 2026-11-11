@@ -41,7 +41,7 @@ export default function UserPage({ currentUser, onUserUpdate, onRebookItem }) {
   const [reservationCategory, setReservationCategory] = useState('ALL')
 
   // Tryby edycji
-  const [editingField, setEditingField] = useState(null) // null | 'NAME' | 'PHONE'
+  const [editingField, setEditingField] = useState(null)
   const [isChangingPassword, setIsChangingPassword] = useState(false)
 
   // Formularz profilu
@@ -64,7 +64,10 @@ export default function UserPage({ currentUser, onUserUpdate, onRebookItem }) {
     if (activeTab === 'RESERVATIONS' && currentUser?.userId) {
       setResLoading(true)
       fetch(`http://localhost:8080/api/reservations/user/${currentUser.userId}`)
-        .then((res) => res.json())
+        .then((res) => {
+          if (!res.ok) throw new Error('Błąd pobierania')
+          return res.json()
+        })
         .then((data) => {
           setReservations(Array.isArray(data) ? data : [])
           setResLoading(false)
@@ -114,14 +117,20 @@ export default function UserPage({ currentUser, onUserUpdate, onRebookItem }) {
     }
   }
 
+  // Pomocnik do wyciągania przedmiotu
+  const getItemFromRes = (r) => {
+    return r.itemId || r.item || r.reservationItems?.[0]?.item || null
+  }
+
   // Filtrowanie
   const now = new Date()
 
   const filteredReservations = useMemo(() => {
     return reservations.filter((r) => {
       if (reservationCategory === 'ALL') return true
-      const itemName = r.reservationItems?.[0]?.item?.name?.toLowerCase() || ''
-      const isService = itemName.includes('usługa') || itemName.includes('koszenie') || itemName.includes('aeracja')
+      const item = getItemFromRes(r)
+      const itemName = item?.name?.toLowerCase() || ''
+      const isService = itemName.includes('usługa') || itemName.includes('koszenie') || itemName.includes('aeracja') || itemName.includes('cięcie')
       if (reservationCategory === 'SERVICE') return isService
       if (reservationCategory === 'EQUIPMENT') return !isService
       return true
@@ -129,11 +138,17 @@ export default function UserPage({ currentUser, onUserUpdate, onRebookItem }) {
   }, [reservations, reservationCategory])
 
   const activeReservations = useMemo(() => {
-    return filteredReservations.filter((r) => new Date(r.endDate) >= now && r.status !== 'CANCELLED')
+    return filteredReservations.filter((r) => {
+      const end = new Date(r.endTime || r.endDate)
+      return (isNaN(end) || end >= now) && r.status !== 'CANCELLED' && r.status !== 'COMPLETED'
+    })
   }, [filteredReservations, now])
 
   const historyReservations = useMemo(() => {
-    return filteredReservations.filter((r) => new Date(r.endDate) < now || r.status === 'CANCELLED')
+    return filteredReservations.filter((r) => {
+      const end = new Date(r.endTime || r.endDate)
+      return (!isNaN(end) && end < now) || r.status === 'CANCELLED' || r.status === 'COMPLETED'
+    })
   }, [filteredReservations, now])
 
   const handleRebook = (item) => {
@@ -224,7 +239,14 @@ export default function UserPage({ currentUser, onUserUpdate, onRebookItem }) {
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                gap: '8px'
+                gap: '8px',
+                transition: 'background-color 0.15s ease'
+              }}
+              onMouseEnter={(e) => {
+                if (activeTab !== 'PROFILE') e.currentTarget.style.backgroundColor = '#f1f5f9'
+              }}
+              onMouseLeave={(e) => {
+                if (activeTab !== 'PROFILE') e.currentTarget.style.backgroundColor = 'transparent'
               }}
             >
               <User size={16} />
@@ -245,7 +267,14 @@ export default function UserPage({ currentUser, onUserUpdate, onRebookItem }) {
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                gap: '8px'
+                gap: '8px',
+                transition: 'background-color 0.15s ease'
+              }}
+              onMouseEnter={(e) => {
+                if (activeTab !== 'RESERVATIONS') e.currentTarget.style.backgroundColor = '#f1f5f9'
+              }}
+              onMouseLeave={(e) => {
+                if (activeTab !== 'RESERVATIONS') e.currentTarget.style.backgroundColor = 'transparent'
               }}
             >
               <Clock size={16} />
@@ -363,7 +392,6 @@ export default function UserPage({ currentUser, onUserUpdate, onRebookItem }) {
                       )}
                     </div>
 
-                    {/* Formularz edycji imienia i nazwiska */}
                     {editingField === 'NAME' && (
                       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.8rem', marginTop: '0.8rem' }}>
                         <input
@@ -402,7 +430,7 @@ export default function UserPage({ currentUser, onUserUpdate, onRebookItem }) {
                     )}
                   </div>
 
-                  {/* Wiersz 2: Adres Email (tylko odczyt) */}
+                  {/* Wiersz 2: Adres Email */}
                   <div style={{
                     padding: '1rem',
                     backgroundColor: THEME.bgSoft,
@@ -499,7 +527,6 @@ export default function UserPage({ currentUser, onUserUpdate, onRebookItem }) {
                       )}
                     </div>
 
-                    {/* Formularz edycji telefonu */}
                     {editingField === 'PHONE' && (
                       <div style={{ marginTop: '0.8rem' }}>
                         <input
@@ -697,10 +724,10 @@ export default function UserPage({ currentUser, onUserUpdate, onRebookItem }) {
                   ))}
                 </div>
 
-                {resLoading && <p style={{ color: THEME.textMuted, fontSize: '0.85rem' }}>Ładowanie...</p>}
+                {resLoading && <p style={{ color: THEME.textMuted, fontSize: '0.85rem' }}>Ładowanie rezerwacji...</p>}
 
                 {!resLoading && filteredReservations.length === 0 && (
-                  <p style={{ color: THEME.textMuted, fontSize: '0.85rem', margin: '2rem 0' }}>Brak zamówień.</p>
+                  <p style={{ color: THEME.textMuted, fontSize: '0.85rem', margin: '2rem 0' }}>Brak zamówień w wybranej kategorii.</p>
                 )}
 
                 {/* Bieżące */}
@@ -710,7 +737,7 @@ export default function UserPage({ currentUser, onUserUpdate, onRebookItem }) {
                       Bieżące i nadchodzące ({activeReservations.length})
                     </h4>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
-                      {activeReservations.map((res) => renderCard(res, handleRebook))}
+                      {activeReservations.map((res) => renderCard(res, getItemFromRes(res), handleRebook))}
                     </div>
                   </div>
                 )}
@@ -722,7 +749,7 @@ export default function UserPage({ currentUser, onUserUpdate, onRebookItem }) {
                       Zakończone ({historyReservations.length})
                     </h4>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
-                      {historyReservations.map((res) => renderCard(res, handleRebook))}
+                      {historyReservations.map((res) => renderCard(res, getItemFromRes(res), handleRebook))}
                     </div>
                   </div>
                 )}
@@ -736,10 +763,11 @@ export default function UserPage({ currentUser, onUserUpdate, onRebookItem }) {
 }
 
 // Karta rezerwacji
-function renderCard(res, onRebook) {
-  const item = res.reservationItems?.[0]?.item || null
-  const startDate = new Date(res.startDate).toLocaleDateString('pl-PL', { day: '2-digit', month: '2-digit', year: 'numeric' })
-  const endDate = new Date(res.endDate).toLocaleDateString('pl-PL', { day: '2-digit', month: '2-digit', year: 'numeric' })
+function renderCard(res, item, onRebook) {
+  const startVal = res.startTime || res.startDate
+  const endVal = res.endTime || res.endDate
+  const startDate = startVal ? new Date(startVal).toLocaleDateString('pl-PL', { day: '2-digit', month: '2-digit', year: 'numeric' }) : 'Brak daty'
+  const endDate = endVal ? new Date(endVal).toLocaleDateString('pl-PL', { day: '2-digit', month: '2-digit', year: 'numeric' }) : 'Brak daty'
 
   return (
     <div
@@ -781,7 +809,7 @@ function renderCard(res, onRebook) {
             <Calendar size={13} /> {startDate} — {endDate}
           </div>
           <div>
-            Koszt: <strong>{res.totalPrice} zł</strong> • {res.deliveryType === 'DELIVERY' ? 'Dowóz' : 'Odbiór osobisty'}
+            Koszt: <strong>{res.totalPrice} zł</strong>
           </div>
         </div>
       </div>

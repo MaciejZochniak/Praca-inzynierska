@@ -6,6 +6,8 @@ import pl.zochniak.ogrodbackend.entity.enums.PaymentStatus;
 import pl.zochniak.ogrodbackend.entity.enums.ReservationStatus;
 import pl.zochniak.ogrodbackend.repository.*;
 import lombok.*;
+
+import org.jspecify.annotations.Nullable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
@@ -122,5 +124,8 @@ public class ReservationService {
     }
     public List<Reservations> getUserReservations(Long userId) {
         return reservationsRepository.findByUserIdOrderByCreatedAtDesc(userId);
+    }
+    public List<Reservations> getReservationsByUserId(Long userId) {
+        return reservationsRepository.findByUserId(userId);
     }
 }
