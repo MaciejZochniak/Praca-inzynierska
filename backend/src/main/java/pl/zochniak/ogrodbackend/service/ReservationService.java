@@ -120,4 +120,7 @@ public class ReservationService {
                 .message("Sukces: Rezerwacja została utworzona. ID rezerwacji: " + savedReservation.getId())
                 .build();
     }
+    public List<Reservations> getUserReservations(Long userId) {
+        return reservationsRepository.findByUserIdOrderByCreatedAtDesc(userId);
+    }
 }

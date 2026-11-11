@@ -72,4 +72,34 @@ public class AuthService {
                 .message("Logowanie udane.")
                 .build();
     }
+    @Transactional
+public AuthResponse updateProfile(Long userId, RegisterRequest request) {
+    User user = userRepository.findById(userId)
+            .orElseThrow(() -> new IllegalArgumentException("Nie znaleziono użytkownika"));
+
+    if (request.getFirstName() != null) user.setFirstName(request.getFirstName());
+    if (request.getLastName() != null) user.setLastName(request.getLastName());
+    if (request.getPhoneNumber() != null) user.setPhoneNumber(request.getPhoneNumber());
+
+    // Weryfikacja do zmiany hasla
+    if (request.getPassword() != null && !request.getPassword().isBlank()) {
+        if (request.getCurrentPassword() == null || request.getCurrentPassword().isBlank()) {
+            throw new IllegalArgumentException("Wymagane jest podanie obecnego hasła.");
+        }
+        if (!passwordEncoder.matches(request.getCurrentPassword(), user.getPasswordHash())) {
+            throw new IllegalArgumentException("Podane obecne hasło jest nieprawidłowe.");
+        }
+        user.setPasswordHash(passwordEncoder.encode(request.getPassword()));
+    }
+
+    User updated = userRepository.save(user);
+    return AuthResponse.builder()
+            .userId(updated.getId())
+            .email(updated.getEmail())
+            .firstName(updated.getFirstName())
+            .lastName(updated.getLastName())
+            .role(updated.getRole())
+            .message("Profil zaktualizowany pomyślnie.")
+            .build();
+    }
 }

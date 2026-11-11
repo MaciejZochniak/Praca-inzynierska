@@ -1,7 +1,17 @@
 import { useEffect, useState, useMemo } from 'react'
-import { BrowserRouter, Routes, Route, Link, useNavigate } from 'react-router-dom'
+import { BrowserRouter, Routes, Route, useNavigate } from 'react-router-dom'
+import { 
+  Phone, 
+  MessageSquare, 
+  Bell, 
+  CalendarDays, 
+  User as UserIcon, 
+  LogOut, 
+  LogIn 
+} from 'lucide-react'
 import logoImage from './assets/GardenBookingLogo.png'
 import AuthPage from './AuthPage'
+import UserPage from './UserPage'
 
 const THEME = {
   primary: '#556B2F',
@@ -126,6 +136,13 @@ function HomePage({ currentUser, onLogout }) {
     }
   }
 
+  const scrollToContact = () => {
+    const contactSection = document.getElementById('contact-section')
+    if (contactSection) {
+      contactSection.scrollIntoView({ behavior: 'smooth' })
+    }
+  }
+
   const calculateTotal = () => {
     if (!selectedItem || !formData.startDate || !formData.endDate) return 0
     const start = new Date(formData.startDate)
@@ -181,76 +198,205 @@ function HomePage({ currentUser, onLogout }) {
   return (
     <div style={{ minHeight: '100vh', width: '100%', margin: 0, padding: 0, backgroundColor: '#fafaf9', color: THEME.textDark, fontFamily: 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif' }}>
       
-      {/* NAVBAR */}
-      <nav style={{ position: 'fixed', top: 0, left: 0, right: 0, height: '70px', backgroundColor: THEME.white, borderBottom: `2px solid ${THEME.surface}`, zIndex: 100, padding: '0 2rem', display: 'flex', alignItems: 'center', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
-        <div style={{ maxWidth: '1280px', margin: '0 auto', display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
+      {/* STYLE RWD: NA TELEFONIE UKRYWAMY NAZWĘ FIRMY I ZMNIEJSZAMY MARGINESY */}
+      <style>{`
+        @media (max-width: 640px) {
+          .brand-text-container {
+            display: none !important;
+          }
+          .main-navbar {
+            padding: 0 0.75rem !important;
+          }
+          .nav-icons-container {
+            gap: 0.35rem !important;
+          }
+          .nav-icon-btn {
+            width: 35px !important;
+            height: 35px !important;
+          }
+        }
+      `}</style>
+
+      {/* 1. NAVBAR */}
+      <nav className="main-navbar" style={{ 
+        position: 'fixed', 
+        top: 0, 
+        left: 0, 
+        right: 0, 
+        height: '70px', 
+        backgroundColor: THEME.white, 
+        borderBottom: `2px solid ${THEME.surface}`, 
+        zIndex: 100, 
+        padding: '0 1.5rem', 
+        display: 'flex', 
+        alignItems: 'center', 
+        boxShadow: '0 2px 8px rgba(0,0,0,0.06)' 
+      }}>
+        <div style={{ maxWidth: '1380px', margin: '0 auto', display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
           
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', cursor: 'pointer' }} onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}>
+          {/* Logo i nazwa firmy (tekst znika automatycznie na telefonach) */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem', cursor: 'pointer', flexShrink: 0 }} onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}>
             <img src={logoImage} alt="GardenBooking Logo" style={{ height: '42px', width: 'auto', objectFit: 'contain' }} />
-            <div>
-              <span style={{ fontSize: '1.3rem', fontWeight: 800, color: THEME.primary, letterSpacing: '-0.5px', display: 'block', lineHeight: 1.1 }}>
+            <div className="brand-text-container">
+              <span style={{ fontSize: '1.25rem', fontWeight: 800, color: THEME.primary, letterSpacing: '-0.5px', display: 'block', lineHeight: 1.1 }}>
                 Garden<span style={{ color: THEME.accent, fontWeight: 700 }}>Booking</span>
               </span>
-              <span style={{ fontSize: '0.68rem', display: 'block', color: THEME.textMuted, fontWeight: 600 }}>
+              <span style={{ fontSize: '0.65rem', display: 'block', color: THEME.textMuted, fontWeight: 600 }}>
                 WYPOŻYCZALNIA SPRZĘTU I USŁUGI OGRODNICZE
               </span>
             </div>
           </div>
 
-          {/* btn uzytkownika */}
-          <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
+          {/* Przyciski ikonowe w navbarze */}
+          <div className="nav-icons-container" style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexShrink: 0 }}>
+            {/* Kontakt (telefon) */}
+            <button
+              onClick={scrollToContact}
+              title="Przejdź do kontaktu"
+              className="nav-icon-btn"
+              style={{
+                backgroundColor: 'transparent',
+                color: THEME.primary,
+                border: `1.5px solid ${THEME.primary}`,
+                width: '38px',
+                height: '38px',
+                borderRadius: '8px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                cursor: 'pointer'
+              }}
+            >
+              <Phone size={18} />
+            </button>
+
             {currentUser ? (
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+              <>
+                {/* Czat */}
                 <button
-                  type="button"
-                  onClick={() => alert(`Przejście do panelu konta: ${currentUser.firstName || currentUser.email}`)}
-                  title="Panel konta użytkownika"
-                  style={{
-                    backgroundColor: 'transparent',
-                    border: `1.5px solid ${THEME.primary}`,
-                    color: THEME.primary,
-                    padding: '7px 14px',
-                    borderRadius: '2px',
-                    fontSize: '0.88rem',
-                    fontWeight: 700,
-                    cursor: 'pointer'
-                  }}
-                >
-                  {currentUser.firstName && currentUser.lastName 
-                    ? `${currentUser.firstName} ${currentUser.lastName}`
-                    : (currentUser.firstName || currentUser.email)}
-                </button>
-                <button
-                  onClick={onLogout}
+                  onClick={() => alert('Moduł Czatu: bezpośrednia komunikacja z obsługą.')}
+                  title="Czat z obsługą"
+                  className="nav-icon-btn"
                   style={{
                     backgroundColor: THEME.surface,
                     color: THEME.primary,
                     border: `1px solid ${THEME.border}`,
-                    padding: '7px 14px',
-                    borderRadius: '2px',
-                    fontSize: '0.85rem',
-                    fontWeight: 700,
+                    width: '38px',
+                    height: '38px',
+                    borderRadius: '8px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
                     cursor: 'pointer'
                   }}
                 >
-                  Wyloguj
+                  <MessageSquare size={18} />
                 </button>
-              </div>
+
+                {/* Powiadomienia */}
+                <button
+                  onClick={() => alert('Powiadomienia i przypomnienia terminów.')}
+                  title="Powiadomienia i przypomnienia"
+                  className="nav-icon-btn"
+                  style={{
+                    backgroundColor: THEME.surface,
+                    color: THEME.primary,
+                    border: `1px solid ${THEME.border}`,
+                    width: '38px',
+                    height: '38px',
+                    borderRadius: '8px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    cursor: 'pointer'
+                  }}
+                >
+                  <Bell size={18} />
+                </button>
+
+                {/* Bieżące rezerwacje */}
+                <button
+                  onClick={() => alert('Bieżące rezerwacje: historia i aktywne zlecenia.')}
+                  title="Bieżące rezerwacje"
+                  className="nav-icon-btn"
+                  style={{
+                    backgroundColor: THEME.surface,
+                    color: THEME.primary,
+                    border: `1px solid ${THEME.border}`,
+                    width: '38px',
+                    height: '38px',
+                    borderRadius: '8px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    cursor: 'pointer'
+                  }}
+                >
+                  <CalendarDays size={18} />
+                </button>
+
+                {/* Zarządzanie kontem */}
+                <button
+                  onClick={() => navigate('/user')}
+                  type="button"
+                  title={`Zarządzaj kontem (${currentUser.firstName || currentUser.email})`}
+                  className="nav-icon-btn"
+                  style={{
+                    backgroundColor: THEME.primary,
+                    color: THEME.white,
+                    border: 'none',
+                    width: '38px',
+                    height: '38px',
+                    borderRadius: '8px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    cursor: 'pointer'
+                  }}
+                >
+                  <UserIcon size={18} />
+                </button>
+
+                {/* Wyloguj */}
+                <button
+                  onClick={onLogout}
+                  title="Wyloguj się"
+                  className="nav-icon-btn"
+                  style={{
+                    backgroundColor: '#fee2e2',
+                    color: '#991b1b',
+                    border: '1px solid #fca5a5',
+                    width: '38px',
+                    height: '38px',
+                    borderRadius: '8px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    cursor: 'pointer'
+                  }}
+                >
+                  <LogOut size={18} />
+                </button>
+              </>
             ) : (
               <button 
                 onClick={() => navigate('/auth')}
+                title="Zaloguj się lub zarejestruj"
+                className="nav-icon-btn"
                 style={{ 
                   backgroundColor: THEME.primary, 
                   color: THEME.white, 
                   border: 'none', 
-                  padding: '8px 18px', 
-                  borderRadius: '2px', 
-                  fontSize: '0.88rem', 
-                  fontWeight: 700, 
-                  cursor: 'pointer' 
+                  width: '38px',
+                  height: '38px',
+                  borderRadius: '8px', 
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  cursor: 'pointer'
                 }}
               >
-                Logowanie
+                <LogIn size={18} />
               </button>
             )}
           </div>
@@ -258,19 +404,19 @@ function HomePage({ currentUser, onLogout }) {
         </div>
       </nav>
 
-      {/* starting page */}
-      <div style={{ minHeight: '100vh', paddingTop: '70px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', backgroundColor: THEME.primary }}>
+      {/* 2. EKRAN POWITALNY */}
+      <div style={{ minHeight: '100vh', paddingTop: '70px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', backgroundColor: THEME.primary, boxSizing: 'border-box' }}>
         <div style={{ height: '1.5rem' }}></div>
-        <div style={{ maxWidth: '960px', margin: '0 auto', width: '100%', padding: '1rem 1.5rem', textAlign: 'center' }}>
+        <div style={{ maxWidth: '960px', margin: '0 auto', width: '100%', padding: '1rem 1.5rem', textAlign: 'center', boxSizing: 'border-box' }}>
           <h1 style={{ fontSize: '2.2rem', fontWeight: 800, color: THEME.white, margin: '0 0 0.5rem 0' }}>Wybierz czego potrzebujesz</h1>
           <p style={{ fontSize: '1rem', color: THEME.surface, margin: '0 0 2rem 0' }}>Wypożycz maszynę do samodzielnej pracy lub zleć wykonanie zadania w ogrodzie.</p>
 
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '1.5rem' }}>
-            <div onClick={() => scrollToCatalog('EQUIPMENT')} style={{ backgroundColor: THEME.white, borderRadius: '2px', padding: '2.2rem 1.5rem', cursor: 'pointer', textAlign: 'center' }}>
+            <div onClick={() => scrollToCatalog('EQUIPMENT')} style={{ backgroundColor: THEME.white, borderRadius: '16px', padding: '2.2rem 1.5rem', cursor: 'pointer', textAlign: 'center' }}>
               <h2 style={{ fontSize: '1.6rem', fontWeight: 800, color: THEME.primary, margin: '0 0 0.5rem 0' }}>Wypożycz sprzęt</h2>
               <span style={{ fontSize: '0.9rem', color: THEME.textMuted }}>Kosiarki, aeratory, glebogryzarki i inne maszyny</span>
             </div>
-            <div onClick={() => scrollToCatalog('SERVICE')} style={{ backgroundColor: THEME.white, borderRadius: '2px', padding: '2.2rem 1.5rem', cursor: 'pointer', textAlign: 'center' }}>
+            <div onClick={() => scrollToCatalog('SERVICE')} style={{ backgroundColor: THEME.white, borderRadius: '16px', padding: '2.2rem 1.5rem', cursor: 'pointer', textAlign: 'center' }}>
               <h2 style={{ fontSize: '1.6rem', fontWeight: 800, color: THEME.primary, margin: '0 0 0.5rem 0' }}>Zamów usługę</h2>
               <span style={{ fontSize: '0.9rem', color: THEME.textMuted }}>Koszenie, aeracja oraz kompleksowe prace ogrodowe</span>
             </div>
@@ -283,9 +429,9 @@ function HomePage({ currentUser, onLogout }) {
         </div>
       </div>
 
-      {/* oferty */}
-      <main id="catalog-section" style={{ maxWidth: '1280px', margin: '0 auto', padding: '3.5rem 1.25rem 2.5rem 1.25rem' }}>
-        <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1.5rem', borderBottom: `2px solid ${THEME.surface}`, paddingBottom: '0.75rem' }}>
+      {/* 3. KATALOG OFERT */}
+      <main id="catalog-section" style={{ maxWidth: '1280px', margin: '0 auto', padding: '3.5rem 1.25rem 2.5rem 1.25rem', boxSizing: 'border-box' }}>
+        <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1.5rem', borderBottom: `2px solid ${THEME.surface}`, paddingBottom: '0.75rem', overflowX: 'auto' }}>
           {[
             { id: 'ALL', label: 'Wszystkie pozycje' },
             { id: 'EQUIPMENT', label: 'Sprzęt ogrodniczy' },
@@ -296,13 +442,14 @@ function HomePage({ currentUser, onLogout }) {
               onClick={() => handleOfferTypeChange(tab.id)}
               style={{
                 padding: '7px 18px',
-                borderRadius: '2px',
+                borderRadius: '20px',
                 border: 'none',
                 fontSize: '0.88rem',
                 fontWeight: 700,
                 cursor: 'pointer',
                 backgroundColor: offerType === tab.id ? THEME.primary : THEME.surface,
-                color: offerType === tab.id ? THEME.white : THEME.primary
+                color: offerType === tab.id ? THEME.white : THEME.primary,
+                whiteSpace: 'nowrap'
               }}
             >
               {tab.label}
@@ -310,8 +457,8 @@ function HomePage({ currentUser, onLogout }) {
           ))}
         </div>
 
-        {/* filtry */}
-        <div style={{ backgroundColor: THEME.white, padding: '1.25rem', borderRadius: '2px', border: `1.5px solid ${THEME.surface}`, marginBottom: '2rem', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '1rem' }}>
+        {/* Panel filtrów */}
+        <div style={{ backgroundColor: THEME.white, padding: '1.25rem', borderRadius: '12px', border: `1.5px solid ${THEME.surface}`, marginBottom: '2rem', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '1rem', boxSizing: 'border-box' }}>
           <div>
             <label style={{ fontSize: '0.78rem', fontWeight: 700, color: THEME.textMuted, display: 'block', marginBottom: '4px' }}>Wyszukaj po nazwie</label>
             <input
@@ -319,7 +466,7 @@ function HomePage({ currentUser, onLogout }) {
               placeholder="np. kosiarka spalinowa..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              style={{ width: '100%', padding: '9px 12px', borderRadius: '2px', border: `1.5px solid ${THEME.border}`, outline: 'none', boxSizing: 'border-box' }}
+              style={{ width: '100%', padding: '9px 12px', borderRadius: '7px', border: `1.5px solid ${THEME.border}`, outline: 'none', boxSizing: 'border-box' }}
             />
           </div>
 
@@ -328,7 +475,7 @@ function HomePage({ currentUser, onLogout }) {
             <select
               value={selectedCategory}
               onChange={(e) => setSelectedCategory(e.target.value)}
-              style={{ width: '100%', padding: '9px 12px', borderRadius: '2px', border: `1.5px solid ${THEME.border}`, outline: 'none', boxSizing: 'border-box' }}
+              style={{ width: '100%', padding: '9px 12px', borderRadius: '7px', border: `1.5px solid ${THEME.border}`, outline: 'none', boxSizing: 'border-box' }}
             >
               {currentCategories.map((cat) => (
                 <option key={cat.id} value={cat.id}>{cat.name}</option>
@@ -341,7 +488,7 @@ function HomePage({ currentUser, onLogout }) {
             <select
               value={sortBy}
               onChange={(e) => setSortBy(e.target.value)}
-              style={{ width: '100%', padding: '9px 12px', borderRadius: '2px', border: `1.5px solid ${THEME.border}`, outline: 'none', boxSizing: 'border-box' }}
+              style={{ width: '100%', padding: '9px 12px', borderRadius: '7px', border: `1.5px solid ${THEME.border}`, outline: 'none', boxSizing: 'border-box' }}
             >
               <option value="DEFAULT">Domyślnie</option>
               <option value="PRICE_ASC">Cena: rosnąco</option>
@@ -353,14 +500,14 @@ function HomePage({ currentUser, onLogout }) {
         </div>
 
         {loading && <p style={{ textAlign: 'center', padding: '3rem', color: THEME.textMuted }}>Ładowanie katalogu...</p>}
-        {error && <p style={{ color: '#dc2626', background: '#fee2e2', padding: '1rem', borderRadius: '2px' }}>Błąd: {error}</p>}
+        {error && <p style={{ color: '#dc2626', background: '#fee2e2', padding: '1rem', borderRadius: '8px' }}>Błąd: {error}</p>}
 
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: '1.5rem' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: '1.5rem', boxSizing: 'border-box' }}>
           {processedItems.map((item) => (
-            <div key={item.id} style={{ backgroundColor: THEME.white, border: `1.5px solid ${THEME.surface}`, borderRadius: '2px', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+            <div key={item.id} style={{ backgroundColor: THEME.white, border: `1.5px solid ${THEME.surface}`, borderRadius: '12px', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
               <div style={{ position: 'relative', width: '100%', height: '200px', backgroundColor: THEME.surface }}>
                 <img src={`http://localhost:8080${item.imageUrl}`} alt={item.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} onError={(e) => { e.target.src = 'https://placehold.co/400x250?text=GardenBooking' }} />
-                <span style={{ position: 'absolute', top: '10px', right: '10px', backgroundColor: item.isAvailable ? THEME.surface : '#fee2e2', color: item.isAvailable ? THEME.primary : '#991b1b', fontSize: '0.72rem', fontWeight: 800, padding: '3px 8px', borderRadius: '2px' }}>
+                <span style={{ position: 'absolute', top: '10px', right: '10px', backgroundColor: item.isAvailable ? THEME.surface : '#fee2e2', color: item.isAvailable ? THEME.primary : '#991b1b', fontSize: '0.72rem', fontWeight: 800, padding: '3px 8px', borderRadius: '10px' }}>
                   {item.isAvailable ? 'Dostępny' : 'Zajęty'}
                 </span>
               </div>
@@ -382,10 +529,10 @@ function HomePage({ currentUser, onLogout }) {
         </div>
       </main>
 
-      {/* rezerwacje */}
+      {/* 4. MODAL REZERWACJI */}
       {selectedItem && (
-        <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(30, 41, 59, 0.65)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 150, padding: '1rem' }}>
-          <div style={{ backgroundColor: THEME.white, borderRadius: '14px', width: '100%', maxWidth: '520px', maxHeight: '90vh', overflowY: 'auto', padding: '1.5rem' }}>
+        <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(30, 41, 59, 0.65)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 150, padding: '1rem', boxSizing: 'border-box' }}>
+          <div style={{ backgroundColor: THEME.white, borderRadius: '14px', width: '100%', maxWidth: '520px', maxHeight: '90vh', overflowY: 'auto', padding: '1.5rem', boxSizing: 'border-box' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1.25rem' }}>
               <div>
                 <span style={{ fontSize: '0.78rem', color: THEME.primary, fontWeight: 700, textTransform: 'uppercase' }}>
@@ -397,7 +544,7 @@ function HomePage({ currentUser, onLogout }) {
             </div>
 
             {statusMessage && (
-              <div style={{ padding: '10px 14px', borderRadius: '2px', marginBottom: '1rem', backgroundColor: statusMessage.type === 'success' ? THEME.surface : '#fee2e2', color: statusMessage.type === 'success' ? THEME.primary : '#991b1b', fontSize: '0.88rem', fontWeight: 600 }}>
+              <div style={{ padding: '10px 14px', borderRadius: '6px', marginBottom: '1rem', backgroundColor: statusMessage.type === 'success' ? THEME.surface : '#fee2e2', color: statusMessage.type === 'success' ? THEME.primary : '#991b1b', fontSize: '0.88rem', fontWeight: 600 }}>
                 {statusMessage.text}
               </div>
             )}
@@ -405,60 +552,60 @@ function HomePage({ currentUser, onLogout }) {
             <form onSubmit={handleSubmitReservation} style={{ display: 'flex', flexDirection: 'column', gap: '0.9rem' }}>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.6rem' }}>
                 <label style={{ fontSize: '0.82rem', fontWeight: 600 }}>Data odbioru:
-                  <input type="datetime-local" required style={{ width: '100%', padding: '7px', marginTop: '3px', borderRadius: '2px', border: `1px solid ${THEME.border}`, boxSizing: 'border-box' }} onChange={(e) => setFormData({ ...formData, startDate: e.target.value })} />
+                  <input type="datetime-local" required style={{ width: '100%', padding: '7px', marginTop: '3px', borderRadius: '6px', border: `1px solid ${THEME.border}`, boxSizing: 'border-box' }} onChange={(e) => setFormData({ ...formData, startDate: e.target.value })} />
                 </label>
                 <label style={{ fontSize: '0.82rem', fontWeight: 600 }}>Data zwrotu:
-                  <input type="datetime-local" required style={{ width: '100%', padding: '7px', marginTop: '3px', borderRadius: '2px', border: `1px solid ${THEME.border}`, boxSizing: 'border-box' }} onChange={(e) => setFormData({ ...formData, endDate: e.target.value })} />
+                  <input type="datetime-local" required style={{ width: '100%', padding: '7px', marginTop: '3px', borderRadius: '6px', border: `1px solid ${THEME.border}`, boxSizing: 'border-box' }} onChange={(e) => setFormData({ ...formData, endDate: e.target.value })} />
                 </label>
               </div>
 
               {!currentUser ? (
                 <>
                   <label style={{ fontSize: '0.82rem', fontWeight: 600 }}>Imię i nazwisko:
-                    <input type="text" required placeholder="np. Jan Kowalski" style={{ width: '100%', padding: '7px', marginTop: '3px', borderRadius: '2px', border: `1px solid ${THEME.border}`, boxSizing: 'border-box' }} onChange={(e) => setFormData({ ...formData, guestName: e.target.value })} />
+                    <input type="text" required placeholder="np. Jan Kowalski" style={{ width: '100%', padding: '7px', marginTop: '3px', borderRadius: '6px', border: `1px solid ${THEME.border}`, boxSizing: 'border-box' }} onChange={(e) => setFormData({ ...formData, guestName: e.target.value })} />
                   </label>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.6rem' }}>
                     <label style={{ fontSize: '0.82rem', fontWeight: 600 }}>Adres e-mail:
-                      <input type="email" required placeholder="kontakt@domena.pl" style={{ width: '100%', padding: '7px', marginTop: '3px', borderRadius: '2px', border: `1px solid ${THEME.border}`, boxSizing: 'border-box' }} onChange={(e) => setFormData({ ...formData, guestEmail: e.target.value })} />
+                      <input type="email" required placeholder="kontakt@domena.pl" style={{ width: '100%', padding: '7px', marginTop: '3px', borderRadius: '6px', border: `1px solid ${THEME.border}`, boxSizing: 'border-box' }} onChange={(e) => setFormData({ ...formData, guestEmail: e.target.value })} />
                     </label>
                     <label style={{ fontSize: '0.82rem', fontWeight: 600 }}>Numer telefonu:
-                      <input type="tel" required placeholder="123 456 789" style={{ width: '100%', padding: '7px', marginTop: '3px', borderRadius: '2px', border: `1px solid ${THEME.border}`, boxSizing: 'border-box' }} onChange={(e) => setFormData({ ...formData, guestPhone: e.target.value })} />
+                      <input type="tel" required placeholder="123 456 789" style={{ width: '100%', padding: '7px', marginTop: '3px', borderRadius: '6px', border: `1px solid ${THEME.border}`, boxSizing: 'border-box' }} onChange={(e) => setFormData({ ...formData, guestPhone: e.target.value })} />
                     </label>
                   </div>
                 </>
               ) : (
-                <div style={{ padding: '8px 12px', backgroundColor: THEME.surface, borderRadius: '2px', border: `1px solid ${THEME.border}`, fontSize: '0.85rem' }}>
+                <div style={{ padding: '8px 12px', backgroundColor: THEME.surface, borderRadius: '6px', border: `1px solid ${THEME.border}`, fontSize: '0.85rem' }}>
                   Dane rezerwującego: <strong>{currentUser.firstName} {currentUser.lastName}</strong> ({currentUser.email})
                 </div>
               )}
 
               <label style={{ fontSize: '0.82rem', fontWeight: 600 }}>Opcja transportu:
-                <select style={{ width: '100%', padding: '7px', marginTop: '3px', borderRadius: '2px', border: `1px solid ${THEME.border}`, boxSizing: 'border-box' }} value={formData.deliveryType} onChange={(e) => setFormData({ ...formData, deliveryType: e.target.value })}>
+                <select style={{ width: '100%', padding: '7px', marginTop: '3px', borderRadius: '6px', border: `1px solid ${THEME.border}`, boxSizing: 'border-box' }} value={formData.deliveryType} onChange={(e) => setFormData({ ...formData, deliveryType: e.target.value })}>
                   <option value="PICKUP">Odbiór osobisty w punkcie (0 zł)</option>
                   <option value="DELIVERY">Dowóz sprzętu na wskazany adres (+50 zł)</option>
                 </select>
               </label>
 
               {formData.deliveryType === 'DELIVERY' && (
-                <div style={{ background: THEME.surface, padding: '9px', borderRadius: '2px', display: 'flex', flexDirection: 'column', gap: '6px', border: `1px solid ${THEME.border}`, boxSizing: 'border-box' }}>
-                  <input type="text" placeholder="Ulica i numer posesji" required style={{ padding: '7px', borderRadius: '2px', border: `1px solid ${THEME.border}`, boxSizing: 'border-box' }} onChange={(e) => setFormData({ ...formData, street: e.target.value })} />
+                <div style={{ background: THEME.surface, padding: '9px', borderRadius: '6px', display: 'flex', flexDirection: 'column', gap: '6px', border: `1px solid ${THEME.border}`, boxSizing: 'border-box' }}>
+                  <input type="text" placeholder="Ulica i numer posesji" required style={{ padding: '7px', borderRadius: '4px', border: `1px solid ${THEME.border}`, boxSizing: 'border-box' }} onChange={(e) => setFormData({ ...formData, street: e.target.value })} />
                   <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '6px' }}>
-                    <input type="text" placeholder="Miejscowość" required style={{ padding: '7px', borderRadius: '2px', border: `1px solid ${THEME.border}`, boxSizing: 'border-box' }} onChange={(e) => setFormData({ ...formData, city: e.target.value })} />
-                    <input type="text" placeholder="Kod pocztowy" required style={{ padding: '7px', borderRadius: '2px', border: `1px solid ${THEME.border}`, boxSizing: 'border-box' }} onChange={(e) => setFormData({ ...formData, postalCode: e.target.value })} />
+                    <input type="text" placeholder="Miejscowość" required style={{ padding: '7px', borderRadius: '4px', border: `1px solid ${THEME.border}`, boxSizing: 'border-box' }} onChange={(e) => setFormData({ ...formData, city: e.target.value })} />
+                    <input type="text" placeholder="Kod pocztowy" required style={{ padding: '7px', borderRadius: '4px', border: `1px solid ${THEME.border}`, boxSizing: 'border-box' }} onChange={(e) => setFormData({ ...formData, postalCode: e.target.value })} />
                   </div>
                 </div>
               )}
 
-              <div style={{ backgroundColor: THEME.surface, border: `1.5px solid ${THEME.border}`, padding: '10px', borderRadius: '2px', textAlign: 'right' }}>
+              <div style={{ backgroundColor: THEME.surface, border: `1.5px solid ${THEME.border}`, padding: '10px', borderRadius: '6px', textAlign: 'right' }}>
                 <span style={{ fontSize: '0.85rem', color: THEME.primary, fontWeight: 600 }}>Łączny szacowany koszt: </span>
                 <strong style={{ fontSize: '1.25rem', color: THEME.primary }}>{calculateTotal()} zł</strong>
               </div>
 
               <div style={{ display: 'flex', gap: '0.6rem', marginTop: '0.4rem' }}>
-                <button type="button" onClick={() => setSelectedItem(null)} style={{ flex: 1, padding: '9px', backgroundColor: THEME.surface, border: `1px solid ${THEME.border}`, borderRadius: '2px', fontWeight: 600, cursor: 'pointer', color: THEME.primary }}>
+                <button type="button" onClick={() => setSelectedItem(null)} style={{ flex: 1, padding: '9px', backgroundColor: THEME.surface, border: `1px solid ${THEME.border}`, borderRadius: '6px', fontWeight: 600, cursor: 'pointer', color: THEME.primary }}>
                   Anuluj
                 </button>
-                <button type="submit" disabled={submitting} style={{ flex: 2, padding: '9px', backgroundColor: THEME.primary, color: THEME.white, border: 'none', borderRadius: '2px', fontWeight: 700, cursor: 'pointer' }}>
+                <button type="submit" disabled={submitting} style={{ flex: 2, padding: '9px', backgroundColor: THEME.primary, color: THEME.white, border: 'none', borderRadius: '6px', fontWeight: 700, cursor: 'pointer' }}>
                   {submitting ? 'Przetwarzanie...' : 'Zatwierdź rezerwację'}
                 </button>
               </div>
@@ -466,6 +613,82 @@ function HomePage({ currentUser, onLogout }) {
           </div>
         </div>
       )}
+
+      {/* 5. STOPKA DOLNA Z DEDYKOWANĄ SEKCJĄ KONTAKTOWĄ */}
+      <footer id="contact-section" style={{ 
+        backgroundColor: THEME.primary, 
+        color: THEME.surface, 
+        padding: '3rem 1.5rem 1.5rem 1.5rem', 
+        marginTop: '4rem',
+        borderTop: `3px solid ${THEME.accent}`,
+        boxSizing: 'border-box'
+      }}>
+        <div style={{ 
+          maxWidth: '1280px', 
+          margin: '0 auto', 
+          display: 'grid', 
+          gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', 
+          gap: '2.5rem',
+          paddingBottom: '2.5rem',
+          borderBottom: '1px solid rgba(239, 245, 210, 0.2)'
+        }}>
+          {/* Kolumna 1: Informacje o firmie */}
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', marginBottom: '0.8rem' }}>
+              <img src={logoImage} alt="GardenBooking" style={{ height: '36px', width: 'auto', filter: 'brightness(0) invert(1)' }} />
+              <span style={{ fontSize: '1.4rem', fontWeight: 800, color: THEME.white }}>
+                GardenBooking
+              </span>
+            </div>
+            <p style={{ fontSize: '0.88rem', lineHeight: 1.6, color: THEME.surface, margin: '0 0 1rem 0' }}>
+              Internetowy system rezerwacji maszyn i usług ogrodniczych. Wygodny wynajem sprzętu z opcją dowozu lub odbiorem osobistym.
+            </p>
+          </div>
+
+          {/* Kolumna 2: Dane kontaktowe */}
+          <div>
+            <h3 style={{ fontSize: '1.05rem', fontWeight: 800, color: THEME.white, marginBottom: '0.9rem', borderLeft: `3px solid ${THEME.accent}`, paddingLeft: '8px' }}>
+              Kontakt z nami
+            </h3>
+            <ul style={{ listStyle: 'none', padding: 0, margin: 0, fontSize: '0.88rem', lineHeight: 2 }}>
+              <li><strong>Adres:</strong> ul. Ogrodnicza 12, 90-001 Łódź</li>
+              <li><strong>Infolinia:</strong> +48 42 600 700 800</li>
+              <li><strong>E-mail:</strong> kontakt@gardenbooking.pl</li>
+              <li><strong>Godziny pracy:</strong> Pon - Pt: 7:00 - 18:00, Sob: 8:00 - 15:00</li>
+            </ul>
+          </div>
+
+          {/* Kolumna 3: Szybkie linki i moduły */}
+          <div>
+            <h3 style={{ fontSize: '1.05rem', fontWeight: 800, color: THEME.white, marginBottom: '0.9rem', borderLeft: `3px solid ${THEME.accent}`, paddingLeft: '8px' }}>
+              Oferta i pomoc
+            </h3>
+            <ul style={{ listStyle: 'none', padding: 0, margin: 0, fontSize: '0.88rem', lineHeight: 2 }}>
+              <li style={{ cursor: 'pointer' }} onClick={() => scrollToCatalog('EQUIPMENT')}>• Katalog maszyn spalinowych</li>
+              <li style={{ cursor: 'pointer' }} onClick={() => scrollToCatalog('SERVICE')}>• Cennik usług i koszenia</li>
+              <li style={{ cursor: 'pointer' }}>• Warunki dowozu i kaucji</li>
+              <li style={{ cursor: 'pointer' }}>• Cyfrowy protokół zdawczo-odbiorczy</li>
+            </ul>
+          </div>
+        </div>
+
+        {/* Pasek praw autorskich */}
+        <div style={{ 
+          maxWidth: '1280px', 
+          margin: '1.5rem auto 0 auto', 
+          display: 'flex', 
+          justifyContent: 'space-between', 
+          alignItems: 'center', 
+          flexWrap: 'wrap', 
+          gap: '0.8rem', 
+          fontSize: '0.78rem',
+          color: THEME.surface 
+        }}>
+          <span>© {new Date().getFullYear()} GardenBooking. Wszelkie prawa zastrzeżone.</span>
+          <span>Projekt systemu rezerwacji maszyn i usług ogrodniczych – Praca inżynierska</span>
+        </div>
+      </footer>
+
     </div>
   )
 }
@@ -486,6 +709,19 @@ export default function App() {
       <Routes>
         <Route path="/" element={<HomePage currentUser={currentUser} onLogout={handleLogout} />} />
         <Route path="/auth" element={<AuthPage onLoginSuccess={(user) => setCurrentUser(user)} />} />
+        <Route path="/user" element={
+            <UserPage 
+              currentUser={currentUser} 
+              onUserUpdate={(updated) => {
+                setCurrentUser(updated)
+                localStorage.setItem('garden_user', JSON.stringify(updated))
+              }}
+              onRebookItem={(item) => {
+                setRebookItem(item)
+              }}
+            />
+          } 
+        />
       </Routes>
     </BrowserRouter>
   )
