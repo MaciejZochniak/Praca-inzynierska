@@ -51,7 +51,6 @@ export default function AuthPage({ onLoginSuccess }) {
       const data = await response.json()
 
       if (response.ok) {
-        // Zapis użytkownika
         localStorage.setItem('garden_user', JSON.stringify(data))
         if (onLoginSuccess) {
           onLoginSuccess(data)
@@ -90,7 +89,6 @@ export default function AuthPage({ onLoginSuccess }) {
         border: `1.5px solid ${THEME.surface}`,
         boxSizing: 'border-box'
       }}>
-        {/* Logo i powrót */}
         <div style={{ textAlign: 'center', marginBottom: '1.75rem' }}>
           <Link to="/" style={{ textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: '0.6rem' }}>
             <img src={logoImage} alt="GardenBooking" style={{ height: '40px', objectFit: 'contain' }} />
@@ -203,7 +201,6 @@ export default function AuthPage({ onLoginSuccess }) {
           </button>
         </form>
 
-        {/* logowanie / rejestracja */}
         <div style={{ marginTop: '1.5rem', textAlign: 'center', fontSize: '0.85rem', color: THEME.textMuted }}>
           {isLogin ? (
             <>
