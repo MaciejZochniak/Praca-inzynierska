@@ -5,13 +5,21 @@ import {
   Clock, 
   RotateCcw, 
   ArrowLeft, 
-  Save, 
   Edit3, 
   Plus, 
   Calendar, 
   CheckCircle2, 
   AlertCircle,
-  KeyRound
+  KeyRound,
+  Wrench,
+  Sprout,
+  XCircle,
+  Clock3,
+  ChevronDown,
+  ChevronUp,
+  Truck,
+  Store,
+  CreditCard
 } from 'lucide-react'
 import logoImage from './assets/GardenBookingLogo.png'
 
@@ -27,6 +35,80 @@ const THEME = {
   borderDivider: '#e2e8f0'
 }
 
+// Sprawdzanie usługi
+function isServiceReservation(res) {
+  const name = (res.itemName || '').toLowerCase()
+  return (
+    name.includes('usługa') ||
+    name.includes('koszenie') ||
+    name.includes('aeracja') ||
+    name.includes('wertykulacja') ||
+    name.includes('cięcie') ||
+    name.includes('wycinka') ||
+    name.includes('zakładanie') ||
+    name.includes('karczowanie')
+  )
+}
+
+// Kolory statusów (zielony, czerwony, standardowy szary)
+function getStatusConfig(status, isService) {
+  switch (status) {
+    case 'COMPLETED':
+      return {
+        label: isService ? 'Ukończone' : 'Zakończone',
+        Icon: CheckCircle2,
+        bg: '#f0fdf4',
+        color: '#16a34a',
+        border: '#bbf7d0'
+      }
+    case 'CANCELLED':
+      return {
+        label: 'Anulowane',
+        Icon: XCircle,
+        bg: '#fef2f2',
+        color: '#dc2626',
+        border: '#fecaca'
+      }
+    case 'CONFIRMED':
+    case 'IN_PROGRESS':
+      return {
+        label: 'W trakcie',
+        Icon: Clock3,
+        bg: '#f1f5f9',
+        color: '#475569',
+        border: '#cbd5e1'
+      }
+    case 'PENDING':
+    default:
+      return {
+        label: 'Oczekujące',
+        Icon: Clock3,
+        bg: '#f1f5f9',
+        color: '#475569',
+        border: '#cbd5e1'
+      }
+  }
+}
+
+// Typ dostawy
+function formatDelivery(res) {
+  const type = res.deliveryType || res.delivery?.deliveryType
+  if (type === 'DELIVERY') return { label: 'Dowóz', Icon: Truck }
+  return { label: 'Odbiór osobisty', Icon: Store }
+}
+
+// Format płatności
+function formatPayment(res) {
+  const method = res.paymentType || res.paymentMethod || res.payment?.paymentType
+  let label = 'Gotówka'
+  if (method === 'BLIK') label = 'BLIK'
+  else if (method === 'CARD' || method === 'KARTA') label = 'Karta'
+  else if (method === 'TRANSFER' || method === 'PRZELEW') label = 'Przelew'
+
+  const isPaid = res.paymentStatus === 'PAID' || res.isPaid === true
+  return { label, isPaid }
+}
+
 export default function UserPage({ currentUser, onUserUpdate, onRebookItem }) {
   const navigate = useNavigate()
 
@@ -40,7 +122,11 @@ export default function UserPage({ currentUser, onUserUpdate, onRebookItem }) {
   const [activeTab, setActiveTab] = useState('PROFILE')
   const [reservationCategory, setReservationCategory] = useState('ALL')
 
-  // Tryby edycji
+  // Zwijanie tabel
+  const [activeOpen, setActiveOpen] = useState(true)
+  const [historyOpen, setHistoryOpen] = useState(true)
+
+  // Edycja danych
   const [editingField, setEditingField] = useState(null)
   const [isChangingPassword, setIsChangingPassword] = useState(false)
 
@@ -59,11 +145,12 @@ export default function UserPage({ currentUser, onUserUpdate, onRebookItem }) {
   const [reservations, setReservations] = useState([])
   const [resLoading, setResLoading] = useState(false)
 
-  // Pobieranie rezerwacji
+  // Pobieranie
   useEffect(() => {
-    if (activeTab === 'RESERVATIONS' && currentUser?.userId) {
+    const uid = currentUser?.userId || currentUser?.id
+    if (activeTab === 'RESERVATIONS' && uid) {
       setResLoading(true)
-      fetch(`http://localhost:8080/api/reservations/user/${currentUser.userId}`)
+      fetch(`http://localhost:8080/api/reservations/user/${uid}`)
         .then((res) => {
           if (!res.ok) throw new Error('Błąd pobierania')
           return res.json()
@@ -79,7 +166,7 @@ export default function UserPage({ currentUser, onUserUpdate, onRebookItem }) {
     }
   }, [activeTab, currentUser])
 
-  // Zapis zmian
+  // Zapis zmian profilu
   const handleSave = async (e) => {
     if (e) e.preventDefault()
     setLoading(true)
@@ -93,8 +180,9 @@ export default function UserPage({ currentUser, onUserUpdate, onRebookItem }) {
       }
     }
 
+    const uid = currentUser?.userId || currentUser?.id
     try {
-      const res = await fetch(`http://localhost:8080/api/auth/profile/${currentUser.userId}`, {
+      const res = await fetch(`http://localhost:8080/api/auth/profile/${uid}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(formData)
@@ -117,20 +205,13 @@ export default function UserPage({ currentUser, onUserUpdate, onRebookItem }) {
     }
   }
 
-  // Pomocnik do wyciągania przedmiotu
-  const getItemFromRes = (r) => {
-    return r.itemId || r.item || r.reservationItems?.[0]?.item || null
-  }
-
   // Filtrowanie
   const now = new Date()
 
   const filteredReservations = useMemo(() => {
     return reservations.filter((r) => {
       if (reservationCategory === 'ALL') return true
-      const item = getItemFromRes(r)
-      const itemName = item?.name?.toLowerCase() || ''
-      const isService = itemName.includes('usługa') || itemName.includes('koszenie') || itemName.includes('aeracja') || itemName.includes('cięcie')
+      const isService = isServiceReservation(r)
       if (reservationCategory === 'SERVICE') return isService
       if (reservationCategory === 'EQUIPMENT') return !isService
       return true
@@ -139,20 +220,22 @@ export default function UserPage({ currentUser, onUserUpdate, onRebookItem }) {
 
   const activeReservations = useMemo(() => {
     return filteredReservations.filter((r) => {
-      const end = new Date(r.endTime || r.endDate)
+      const end = new Date(r.endDate || r.endTime)
       return (isNaN(end) || end >= now) && r.status !== 'CANCELLED' && r.status !== 'COMPLETED'
     })
   }, [filteredReservations, now])
 
   const historyReservations = useMemo(() => {
     return filteredReservations.filter((r) => {
-      const end = new Date(r.endTime || r.endDate)
+      const end = new Date(r.endDate || r.endTime)
       return (!isNaN(end) && end < now) || r.status === 'CANCELLED' || r.status === 'COMPLETED'
     })
   }, [filteredReservations, now])
 
-  const handleRebook = (item) => {
-    if (onRebookItem) onRebookItem(item)
+  const handleRebook = (res) => {
+    if (onRebookItem) {
+      onRebookItem({ id: res.itemId, name: res.itemName })
+    }
     navigate('/')
   }
 
@@ -166,6 +249,20 @@ export default function UserPage({ currentUser, onUserUpdate, onRebookItem }) {
       color: THEME.textDark,
       fontFamily: 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'
     }}>
+      {/* width do mobile */}
+      <style>{`
+        @media (max-width: 900px) {
+          .desktop-table { display: none !important; }
+          .mobile-cards { display: flex !important; }
+          .panel-container { padding: 1rem 0.5rem !important; margin: 1rem auto !important; }
+          .panel-header-btn { font-size: 0.85rem !important; padding: 10px 12px !important; }
+        }
+        @media (min-width: 901px) {
+          .desktop-table { display: table !important; }
+          .mobile-cards { display: none !important; }
+        }
+      `}</style>
+
       {/* Nawigacja */}
       <nav style={{
         height: '65px',
@@ -177,7 +274,7 @@ export default function UserPage({ currentUser, onUserUpdate, onRebookItem }) {
         borderBottom: `1px solid ${THEME.borderDivider}`,
         boxShadow: '0 1px 3px rgba(0,0,0,0.05)'
       }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
           <Link to="/" style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', textDecoration: 'none' }}>
             <img src={logoImage} alt="GardenBooking" style={{ height: '38px', objectFit: 'contain' }} />
             <span style={{ fontSize: '1.25rem', fontWeight: 800, color: THEME.primary }}>
@@ -213,8 +310,8 @@ export default function UserPage({ currentUser, onUserUpdate, onRebookItem }) {
         </Link>
       </nav>
 
-      {/* Kontener */}
-      <main style={{ maxWidth: '920px', margin: '2rem auto', padding: '0 1rem' }}>
+      {/* Kontener główny */}
+      <main className="panel-container" style={{ maxWidth: '1080px', margin: '2rem auto', padding: '0 1rem' }}>
         <div style={{
           backgroundColor: THEME.white,
           borderRadius: '4px',
@@ -239,14 +336,7 @@ export default function UserPage({ currentUser, onUserUpdate, onRebookItem }) {
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                gap: '8px',
-                transition: 'background-color 0.15s ease'
-              }}
-              onMouseEnter={(e) => {
-                if (activeTab !== 'PROFILE') e.currentTarget.style.backgroundColor = '#f1f5f9'
-              }}
-              onMouseLeave={(e) => {
-                if (activeTab !== 'PROFILE') e.currentTarget.style.backgroundColor = 'transparent'
+                gap: '8px'
               }}
             >
               <User size={16} />
@@ -267,14 +357,7 @@ export default function UserPage({ currentUser, onUserUpdate, onRebookItem }) {
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                gap: '8px',
-                transition: 'background-color 0.15s ease'
-              }}
-              onMouseEnter={(e) => {
-                if (activeTab !== 'RESERVATIONS') e.currentTarget.style.backgroundColor = '#f1f5f9'
-              }}
-              onMouseLeave={(e) => {
-                if (activeTab !== 'RESERVATIONS') e.currentTarget.style.backgroundColor = 'transparent'
+                gap: '8px'
               }}
             >
               <Clock size={16} />
@@ -282,8 +365,8 @@ export default function UserPage({ currentUser, onUserUpdate, onRebookItem }) {
             </button>
           </div>
 
-          <div style={{ padding: '2rem' }}>
-            {/* Powiadomienie */}
+          <div style={{ padding: '1.75rem' }}>
+            {/* Komunikat */}
             {profileMsg && (
               <div style={{
                 padding: '10px 14px',
@@ -303,7 +386,7 @@ export default function UserPage({ currentUser, onUserUpdate, onRebookItem }) {
               </div>
             )}
 
-            {/* ZAKŁADKA 1: DANE PROFILU */}
+            {/* Profil */}
             {activeTab === 'PROFILE' && (
               <div>
                 <h3 style={{ margin: '0 0 1.25rem 0', fontSize: '1.15rem', color: THEME.textDark }}>
@@ -311,24 +394,14 @@ export default function UserPage({ currentUser, onUserUpdate, onRebookItem }) {
                 </h3>
 
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
-                  
-                  {/* Wiersz 1: Imię i nazwisko */}
-                  <div style={{
-                    padding: '1rem',
-                    backgroundColor: THEME.bgSoft,
-                    border: `1px solid ${THEME.borderDefault}`,
-                    borderRadius: '4px'
-                  }}>
+                  {/* Imię i nazwisko */}
+                  <div style={{ padding: '1rem', backgroundColor: THEME.bgSoft, border: `1px solid ${THEME.borderDefault}`, borderRadius: '4px' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                       <div>
-                        <span style={{ fontSize: '0.78rem', fontWeight: 600, color: THEME.textMuted, display: 'block' }}>
-                          Imię i nazwisko
-                        </span>
+                        <span style={{ fontSize: '0.78rem', fontWeight: 600, color: THEME.textMuted, display: 'block' }}>Imię i nazwisko</span>
                         {editingField !== 'NAME' && (
                           <span style={{ fontSize: '1rem', fontWeight: 700, color: THEME.textDark }}>
-                            {formData.firstName || formData.lastName
-                              ? `${formData.firstName} ${formData.lastName}`.trim()
-                              : 'Brak danych'}
+                            {formData.firstName || formData.lastName ? `${formData.firstName} ${formData.lastName}`.trim() : 'Brak danych'}
                           </span>
                         )}
                       </div>
@@ -336,56 +409,16 @@ export default function UserPage({ currentUser, onUserUpdate, onRebookItem }) {
                       {editingField !== 'NAME' ? (
                         <button
                           onClick={() => { setEditingField('NAME'); setProfileMsg(null) }}
-                          style={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '5px',
-                            padding: '6px 14px',
-                            borderRadius: '4px',
-                            border: `1px solid ${THEME.borderDefault}`,
-                            backgroundColor: THEME.white,
-                            color: THEME.textDark,
-                            fontSize: '0.82rem',
-                            fontWeight: 600,
-                            cursor: 'pointer',
-                            transition: 'border-color 0.15s ease'
-                          }}
-                          onMouseEnter={(e) => { e.currentTarget.style.borderColor = THEME.borderHover }}
-                          onMouseLeave={(e) => { e.currentTarget.style.borderColor = THEME.borderDefault }}
+                          style={{ display: 'flex', alignItems: 'center', gap: '5px', padding: '6px 14px', borderRadius: '4px', border: `1px solid ${THEME.borderDefault}`, backgroundColor: THEME.white, color: THEME.textDark, fontSize: '0.82rem', fontWeight: 600, cursor: 'pointer' }}
                         >
                           <Edit3 size={14} /> Edytuj
                         </button>
                       ) : (
                         <div style={{ display: 'flex', gap: '6px' }}>
-                          <button
-                            onClick={handleSave}
-                            disabled={loading}
-                            style={{
-                              padding: '6px 14px',
-                              borderRadius: '4px',
-                              border: `1px solid ${THEME.borderDefault}`,
-                              backgroundColor: THEME.primary,
-                              color: THEME.white,
-                              fontSize: '0.82rem',
-                              fontWeight: 600,
-                              cursor: 'pointer'
-                            }}
-                          >
+                          <button onClick={handleSave} disabled={loading} style={{ padding: '6px 14px', borderRadius: '4px', border: `1px solid ${THEME.borderDefault}`, backgroundColor: THEME.primary, color: THEME.white, fontSize: '0.82rem', fontWeight: 600, cursor: 'pointer' }}>
                             {loading ? 'Zapis...' : 'Zapisz'}
                           </button>
-                          <button
-                            onClick={() => setEditingField(null)}
-                            style={{
-                              padding: '6px 12px',
-                              borderRadius: '4px',
-                              border: `1px solid ${THEME.borderDefault}`,
-                              backgroundColor: THEME.white,
-                              color: THEME.textDark,
-                              fontSize: '0.82rem',
-                              fontWeight: 600,
-                              cursor: 'pointer'
-                            }}
-                          >
+                          <button onClick={() => setEditingField(null)} style={{ padding: '6px 12px', borderRadius: '4px', border: `1px solid ${THEME.borderDefault}`, backgroundColor: THEME.white, color: THEME.textDark, fontSize: '0.82rem', fontWeight: 600, cursor: 'pointer' }}>
                             Anuluj
                           </button>
                         </div>
@@ -394,69 +427,23 @@ export default function UserPage({ currentUser, onUserUpdate, onRebookItem }) {
 
                     {editingField === 'NAME' && (
                       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.8rem', marginTop: '0.8rem' }}>
-                        <input
-                          type="text"
-                          placeholder="Imię"
-                          value={formData.firstName}
-                          onChange={(e) => setFormData({ ...formData, firstName: e.target.value })}
-                          style={{
-                            padding: '8px 10px',
-                            borderRadius: '4px',
-                            border: `1px solid ${THEME.borderDefault}`,
-                            backgroundColor: THEME.white,
-                            outline: 'none',
-                            fontSize: '0.9rem'
-                          }}
-                          onFocus={(e) => { e.currentTarget.style.borderColor = THEME.borderHover }}
-                          onBlur={(e) => { e.currentTarget.style.borderColor = THEME.borderDefault }}
-                        />
-                        <input
-                          type="text"
-                          placeholder="Nazwisko"
-                          value={formData.lastName}
-                          onChange={(e) => setFormData({ ...formData, lastName: e.target.value })}
-                          style={{
-                            padding: '8px 10px',
-                            borderRadius: '4px',
-                            border: `1px solid ${THEME.borderDefault}`,
-                            backgroundColor: THEME.white,
-                            outline: 'none',
-                            fontSize: '0.9rem'
-                          }}
-                          onFocus={(e) => { e.currentTarget.style.borderColor = THEME.borderHover }}
-                          onBlur={(e) => { e.currentTarget.style.borderColor = THEME.borderDefault }}
-                        />
+                        <input type="text" placeholder="Imię" value={formData.firstName} onChange={(e) => setFormData({ ...formData, firstName: e.target.value })} style={{ padding: '8px 10px', borderRadius: '4px', border: `1px solid ${THEME.borderDefault}`, backgroundColor: THEME.white, outline: 'none' }} />
+                        <input type="text" placeholder="Nazwisko" value={formData.lastName} onChange={(e) => setFormData({ ...formData, lastName: e.target.value })} style={{ padding: '8px 10px', borderRadius: '4px', border: `1px solid ${THEME.borderDefault}`, backgroundColor: THEME.white, outline: 'none' }} />
                       </div>
                     )}
                   </div>
 
-                  {/* Wiersz 2: Adres Email */}
-                  <div style={{
-                    padding: '1rem',
-                    backgroundColor: THEME.bgSoft,
-                    border: `1px solid ${THEME.borderDefault}`,
-                    borderRadius: '4px'
-                  }}>
-                    <span style={{ fontSize: '0.78rem', fontWeight: 600, color: THEME.textMuted, display: 'block' }}>
-                      Adres e-mail
-                    </span>
-                    <span style={{ fontSize: '1rem', fontWeight: 700, color: THEME.textDark }}>
-                      {currentUser.email}
-                    </span>
+                  {/* Email */}
+                  <div style={{ padding: '1rem', backgroundColor: THEME.bgSoft, border: `1px solid ${THEME.borderDefault}`, borderRadius: '4px' }}>
+                    <span style={{ fontSize: '0.78rem', fontWeight: 600, color: THEME.textMuted, display: 'block' }}>Adres e-mail</span>
+                    <span style={{ fontSize: '1rem', fontWeight: 700, color: THEME.textDark }}>{currentUser.email}</span>
                   </div>
 
-                  {/* Wiersz 3: Numer telefonu */}
-                  <div style={{
-                    padding: '1rem',
-                    backgroundColor: THEME.bgSoft,
-                    border: `1px solid ${THEME.borderDefault}`,
-                    borderRadius: '4px'
-                  }}>
+                  {/* Telefon */}
+                  <div style={{ padding: '1rem', backgroundColor: THEME.bgSoft, border: `1px solid ${THEME.borderDefault}`, borderRadius: '4px' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                       <div>
-                        <span style={{ fontSize: '0.78rem', fontWeight: 600, color: THEME.textMuted, display: 'block' }}>
-                          Numer telefonu
-                        </span>
+                        <span style={{ fontSize: '0.78rem', fontWeight: 600, color: THEME.textMuted, display: 'block' }}>Numer telefonu</span>
                         {editingField !== 'PHONE' && (
                           <span style={{ fontSize: '1rem', fontWeight: 700, color: formData.phoneNumber ? THEME.textDark : THEME.textMuted }}>
                             {formData.phoneNumber || 'Brak numeru telefonu'}
@@ -467,60 +454,16 @@ export default function UserPage({ currentUser, onUserUpdate, onRebookItem }) {
                       {editingField !== 'PHONE' ? (
                         <button
                           onClick={() => { setEditingField('PHONE'); setProfileMsg(null) }}
-                          style={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '5px',
-                            padding: '6px 14px',
-                            borderRadius: '4px',
-                            border: `1px solid ${THEME.borderDefault}`,
-                            backgroundColor: THEME.white,
-                            color: THEME.textDark,
-                            fontSize: '0.82rem',
-                            fontWeight: 600,
-                            cursor: 'pointer',
-                            transition: 'border-color 0.15s ease'
-                          }}
-                          onMouseEnter={(e) => { e.currentTarget.style.borderColor = THEME.borderHover }}
-                          onMouseLeave={(e) => { e.currentTarget.style.borderColor = THEME.borderDefault }}
+                          style={{ display: 'flex', alignItems: 'center', gap: '5px', padding: '6px 14px', borderRadius: '4px', border: `1px solid ${THEME.borderDefault}`, backgroundColor: THEME.white, color: THEME.textDark, fontSize: '0.82rem', fontWeight: 600, cursor: 'pointer' }}
                         >
-                          {formData.phoneNumber ? (
-                            <><Edit3 size={14} /> Edytuj</>
-                          ) : (
-                            <><Plus size={14} /> Dodaj</>
-                          )}
+                          {formData.phoneNumber ? <><Edit3 size={14} /> Edytuj</> : <><Plus size={14} /> Dodaj</>}
                         </button>
                       ) : (
                         <div style={{ display: 'flex', gap: '6px' }}>
-                          <button
-                            onClick={handleSave}
-                            disabled={loading}
-                            style={{
-                              padding: '6px 14px',
-                              borderRadius: '4px',
-                              border: `1px solid ${THEME.borderDefault}`,
-                              backgroundColor: THEME.primary,
-                              color: THEME.white,
-                              fontSize: '0.82rem',
-                              fontWeight: 600,
-                              cursor: 'pointer'
-                            }}
-                          >
+                          <button onClick={handleSave} disabled={loading} style={{ padding: '6px 14px', borderRadius: '4px', border: `1px solid ${THEME.borderDefault}`, backgroundColor: THEME.primary, color: THEME.white, fontSize: '0.82rem', fontWeight: 600, cursor: 'pointer' }}>
                             {loading ? 'Zapis...' : 'Zapisz'}
                           </button>
-                          <button
-                            onClick={() => setEditingField(null)}
-                            style={{
-                              padding: '6px 12px',
-                              borderRadius: '4px',
-                              border: `1px solid ${THEME.borderDefault}`,
-                              backgroundColor: THEME.white,
-                              color: THEME.textDark,
-                              fontSize: '0.82rem',
-                              fontWeight: 600,
-                              cursor: 'pointer'
-                            }}
-                          >
+                          <button onClick={() => setEditingField(null)} style={{ padding: '6px 12px', borderRadius: '4px', border: `1px solid ${THEME.borderDefault}`, backgroundColor: THEME.white, color: THEME.textDark, fontSize: '0.82rem', fontWeight: 600, cursor: 'pointer' }}>
                             Anuluj
                           </button>
                         </div>
@@ -529,174 +472,64 @@ export default function UserPage({ currentUser, onUserUpdate, onRebookItem }) {
 
                     {editingField === 'PHONE' && (
                       <div style={{ marginTop: '0.8rem' }}>
-                        <input
-                          type="tel"
-                          placeholder="np. 600700800"
-                          value={formData.phoneNumber}
-                          onChange={(e) => setFormData({ ...formData, phoneNumber: e.target.value })}
-                          style={{
-                            width: '100%',
-                            padding: '8px 10px',
-                            borderRadius: '4px',
-                            border: `1px solid ${THEME.borderDefault}`,
-                            backgroundColor: THEME.white,
-                            outline: 'none',
-                            fontSize: '0.9rem',
-                            boxSizing: 'border-box'
-                          }}
-                          onFocus={(e) => { e.currentTarget.style.borderColor = THEME.borderHover }}
-                          onBlur={(e) => { e.currentTarget.style.borderColor = THEME.borderDefault }}
-                        />
+                        <input type="tel" placeholder="np. 600700800" value={formData.phoneNumber} onChange={(e) => setFormData({ ...formData, phoneNumber: e.target.value })} style={{ width: '100%', padding: '8px 10px', borderRadius: '4px', border: `1px solid ${THEME.borderDefault}`, backgroundColor: THEME.white, outline: 'none', boxSizing: 'border-box' }} />
                       </div>
                     )}
                   </div>
 
-                  {/* Wiersz 4: Zmiana hasła */}
-                  <div style={{
-                    padding: '1.25rem',
-                    backgroundColor: THEME.bgSoft,
-                    border: `1px solid ${THEME.borderDefault}`,
-                    borderRadius: '4px',
-                    marginTop: '0.5rem'
-                  }}>
+                  {/* Hasło */}
+                  <div style={{ padding: '1.25rem', backgroundColor: THEME.bgSoft, border: `1px solid ${THEME.borderDefault}`, borderRadius: '4px', marginTop: '0.5rem' }}>
                     {!isChangingPassword ? (
                       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                           <KeyRound size={17} color={THEME.textMuted} />
-                          <span style={{ fontSize: '0.9rem', fontWeight: 600, color: THEME.textDark }}>
-                            Chcesz zmienić hasło?
-                          </span>
+                          <span style={{ fontSize: '0.9rem', fontWeight: 600, color: THEME.textDark }}>Chcesz zmienić hasło?</span>
                         </div>
                         <button
                           onClick={() => { setIsChangingPassword(true); setProfileMsg(null) }}
-                          style={{
-                            padding: '6px 14px',
-                            borderRadius: '4px',
-                            border: `1px solid ${THEME.borderDefault}`,
-                            backgroundColor: THEME.white,
-                            color: THEME.textDark,
-                            fontSize: '0.82rem',
-                            fontWeight: 600,
-                            cursor: 'pointer',
-                            transition: 'border-color 0.15s ease'
-                          }}
-                          onMouseEnter={(e) => { e.currentTarget.style.borderColor = THEME.borderHover }}
-                          onMouseLeave={(e) => { e.currentTarget.style.borderColor = THEME.borderDefault }}
+                          style={{ padding: '6px 14px', borderRadius: '4px', border: `1px solid ${THEME.borderDefault}`, backgroundColor: THEME.white, color: THEME.textDark, fontSize: '0.82rem', fontWeight: 600, cursor: 'pointer' }}
                         >
                           Kliknij, aby zmienić
                         </button>
                       </div>
                     ) : (
                       <form onSubmit={handleSave} style={{ display: 'flex', flexDirection: 'column', gap: '0.9rem' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '0.2rem' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                           <KeyRound size={17} color={THEME.primary} />
-                          <span style={{ fontSize: '0.95rem', fontWeight: 700, color: THEME.textDark }}>
-                            Zmiana hasła
-                          </span>
+                          <span style={{ fontSize: '0.95rem', fontWeight: 700, color: THEME.textDark }}>Zmiana hasła</span>
                         </div>
-
                         <label style={{ fontSize: '0.8rem', fontWeight: 600, color: THEME.textMuted }}>
-                          Obecne hasło do konta:
-                          <input
-                            type="password"
-                            required
-                            placeholder="Wpisz obecne hasło"
-                            value={formData.currentPassword}
-                            onChange={(e) => setFormData({ ...formData, currentPassword: e.target.value })}
-                            style={{
-                              width: '100%',
-                              padding: '8px 10px',
-                              marginTop: '4px',
-                              borderRadius: '4px',
-                              border: `1px solid ${THEME.borderDefault}`,
-                              backgroundColor: THEME.white,
-                              outline: 'none',
-                              fontSize: '0.9rem',
-                              boxSizing: 'border-box'
-                            }}
-                            onFocus={(e) => { e.currentTarget.style.borderColor = THEME.borderHover }}
-                            onBlur={(e) => { e.currentTarget.style.borderColor = THEME.borderDefault }}
-                          />
+                          Obecne hasło:
+                          <input type="password" required value={formData.currentPassword} onChange={(e) => setFormData({ ...formData, currentPassword: e.target.value })} style={{ width: '100%', padding: '8px 10px', marginTop: '4px', borderRadius: '4px', border: `1px solid ${THEME.borderDefault}`, backgroundColor: THEME.white, outline: 'none', boxSizing: 'border-box' }} />
                         </label>
-
                         <label style={{ fontSize: '0.8rem', fontWeight: 600, color: THEME.textMuted }}>
                           Nowe hasło:
-                          <input
-                            type="password"
-                            required
-                            placeholder="Wpisz nowe hasło"
-                            value={formData.password}
-                            onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-                            style={{
-                              width: '100%',
-                              padding: '8px 10px',
-                              marginTop: '4px',
-                              borderRadius: '4px',
-                              border: `1px solid ${THEME.borderDefault}`,
-                              backgroundColor: THEME.white,
-                              outline: 'none',
-                              fontSize: '0.9rem',
-                              boxSizing: 'border-box'
-                            }}
-                            onFocus={(e) => { e.currentTarget.style.borderColor = THEME.borderHover }}
-                            onBlur={(e) => { e.currentTarget.style.borderColor = THEME.borderDefault }}
-                          />
+                          <input type="password" required value={formData.password} onChange={(e) => setFormData({ ...formData, password: e.target.value })} style={{ width: '100%', padding: '8px 10px', marginTop: '4px', borderRadius: '4px', border: `1px solid ${THEME.borderDefault}`, backgroundColor: THEME.white, outline: 'none', boxSizing: 'border-box' }} />
                         </label>
-
-                        <div style={{ display: 'flex', gap: '8px', marginTop: '0.3rem' }}>
-                          <button
-                            type="submit"
-                            disabled={loading}
-                            style={{
-                              padding: '8px 16px',
-                              borderRadius: '4px',
-                              border: `1px solid ${THEME.borderDefault}`,
-                              backgroundColor: THEME.primary,
-                              color: THEME.white,
-                              fontSize: '0.85rem',
-                              fontWeight: 600,
-                              cursor: 'pointer'
-                            }}
-                          >
+                        <div style={{ display: 'flex', gap: '8px' }}>
+                          <button type="submit" disabled={loading} style={{ padding: '8px 16px', borderRadius: '4px', border: `1px solid ${THEME.borderDefault}`, backgroundColor: THEME.primary, color: THEME.white, fontSize: '0.85rem', fontWeight: 600, cursor: 'pointer' }}>
                             {loading ? 'Zapisywanie...' : 'Zapisz nowe hasło'}
                           </button>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setIsChangingPassword(false)
-                              setFormData((prev) => ({ ...prev, currentPassword: '', password: '' }))
-                            }}
-                            style={{
-                              padding: '8px 14px',
-                              borderRadius: '4px',
-                              border: `1px solid ${THEME.borderDefault}`,
-                              backgroundColor: THEME.white,
-                              color: THEME.textDark,
-                              fontSize: '0.85rem',
-                              fontWeight: 600,
-                              cursor: 'pointer'
-                            }}
-                          >
+                          <button type="button" onClick={() => { setIsChangingPassword(false); setFormData((prev) => ({ ...prev, currentPassword: '', password: '' })) }} style={{ padding: '8px 14px', borderRadius: '4px', border: `1px solid ${THEME.borderDefault}`, backgroundColor: THEME.white, color: THEME.textDark, fontSize: '0.85rem', fontWeight: 600, cursor: 'pointer' }}>
                             Anuluj
                           </button>
                         </div>
                       </form>
                     )}
                   </div>
-
                 </div>
               </div>
             )}
 
-            {/* ZAKŁADKA 2: REZERWACJE I HISTORIA */}
+            {/*historia zamówień*/}
             {activeTab === 'RESERVATIONS' && (
               <div>
-                {/* Kategorie */}
+                {/* Filtry kategorii */}
                 <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1.5rem', flexWrap: 'wrap' }}>
                   {[
-                    { id: 'ALL', label: 'Wszystkie' },
-                    { id: 'EQUIPMENT', label: 'Sprzęt' },
-                    { id: 'SERVICE', label: 'Usługi' }
+                    { id: 'ALL', label: 'Wszystkie pozycje' },
+                    { id: 'EQUIPMENT', label: 'Wypożyczenie sprzętu' },
+                    { id: 'SERVICE', label: 'Usługi ogrodnicze' }
                   ].map((cat) => (
                     <button
                       key={cat.id}
@@ -712,12 +545,6 @@ export default function UserPage({ currentUser, onUserUpdate, onRebookItem }) {
                         color: reservationCategory === cat.id ? THEME.white : THEME.textDark,
                         transition: 'border-color 0.15s ease'
                       }}
-                      onMouseEnter={(e) => {
-                        if (reservationCategory !== cat.id) e.currentTarget.style.borderColor = THEME.borderHover
-                      }}
-                      onMouseLeave={(e) => {
-                        if (reservationCategory !== cat.id) e.currentTarget.style.borderColor = THEME.borderDefault
-                      }}
                     >
                       {cat.label}
                     </button>
@@ -730,29 +557,90 @@ export default function UserPage({ currentUser, onUserUpdate, onRebookItem }) {
                   <p style={{ color: THEME.textMuted, fontSize: '0.85rem', margin: '2rem 0' }}>Brak zamówień w wybranej kategorii.</p>
                 )}
 
-                {/* Bieżące */}
-                {activeReservations.length > 0 && (
-                  <div style={{ marginBottom: '2rem' }}>
-                    <h4 style={{ margin: '0 0 0.8rem 0', fontSize: '0.95rem', color: THEME.textDark, fontWeight: 700 }}>
-                      Bieżące i nadchodzące ({activeReservations.length})
-                    </h4>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
-                      {activeReservations.map((res) => renderCard(res, getItemFromRes(res), handleRebook))}
-                    </div>
-                  </div>
-                )}
+                {/* Bieżące i nadchodzące rezerwacje */}
+                <div style={{ marginBottom: '2rem', border: `1px solid ${THEME.borderDefault}`, borderRadius: '4px', overflow: 'hidden' }}>
+                  <button
+                    className="panel-header-btn"
+                    onClick={() => setActiveOpen(!activeOpen)}
+                    style={{
+                      width: '100%',
+                      padding: '12px 16px',
+                      backgroundColor: '#f8fafc',
+                      border: 'none',
+                      borderBottom: activeOpen ? `1px solid ${THEME.borderDivider}` : 'none',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      cursor: 'pointer',
+                      textAlign: 'left'
+                    }}
+                  >
+                    <span style={{ fontWeight: 800, fontSize: '0.98rem', color: THEME.textDark }}>
+                      Bieżące i nadchodzące rezerwacje ({activeReservations.length})
+                    </span>
+                    {activeOpen ? <ChevronUp size={18} color={THEME.textMuted} /> : <ChevronDown size={18} color={THEME.textMuted} />}
+                  </button>
 
-                {/* Archiwum */}
-                {historyReservations.length > 0 && (
-                  <div>
-                    <h4 style={{ margin: '0 0 0.8rem 0', fontSize: '0.95rem', color: THEME.textMuted, fontWeight: 700 }}>
-                      Zakończone ({historyReservations.length})
-                    </h4>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
-                      {historyReservations.map((res) => renderCard(res, getItemFromRes(res), handleRebook))}
+                  {activeOpen && (
+                    <div>
+                      {activeReservations.length === 0 ? (
+                        <p style={{ padding: '1.25rem', color: THEME.textMuted, fontSize: '0.85rem', margin: 0 }}>
+                          Brak bieżących lub zaplanowanych zamówień.
+                        </p>
+                      ) : (
+                        <ResponsiveReservationList 
+                          reservations={activeReservations} 
+                          onRebook={handleRebook} 
+                          canRebook={false} 
+                          showPayment={true} 
+                        />
+                      )}
                     </div>
-                  </div>
-                )}
+                  )}
+                </div>
+
+                {/* Historia zamówień */}
+                <div style={{ border: `1px solid ${THEME.borderDefault}`, borderRadius: '4px', overflow: 'hidden' }}>
+                  <button
+                    className="panel-header-btn"
+                    onClick={() => setHistoryOpen(!historyOpen)}
+                    style={{
+                      width: '100%',
+                      padding: '12px 16px',
+                      backgroundColor: '#f8fafc',
+                      border: 'none',
+                      borderBottom: historyOpen ? `1px solid ${THEME.borderDivider}` : 'none',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      cursor: 'pointer',
+                      textAlign: 'left'
+                    }}
+                  >
+                    <span style={{ fontWeight: 800, fontSize: '0.98rem', color: THEME.textDark }}>
+                      Historia zamówień zakończonych ({historyReservations.length})
+                    </span>
+                    {historyOpen ? <ChevronUp size={18} color={THEME.textMuted} /> : <ChevronDown size={18} color={THEME.textMuted} />}
+                  </button>
+
+                  {historyOpen && (
+                    <div>
+                      {historyReservations.length === 0 ? (
+                        <p style={{ padding: '1.25rem', color: THEME.textMuted, fontSize: '0.85rem', margin: 0 }}>
+                          Brak zrealizowanych zamówień w historii.
+                        </p>
+                      ) : (
+                        <ResponsiveReservationList 
+                          reservations={historyReservations} 
+                          onRebook={handleRebook} 
+                          canRebook={true} 
+                          showPayment={false} 
+                        />
+                      )}
+                    </div>
+                  )}
+                </div>
+
               </div>
             )}
           </div>
@@ -762,83 +650,285 @@ export default function UserPage({ currentUser, onUserUpdate, onRebookItem }) {
   )
 }
 
-// Karta rezerwacji
-function renderCard(res, item, onRebook) {
-  const startVal = res.startTime || res.startDate
-  const endVal = res.endTime || res.endDate
-  const startDate = startVal ? new Date(startVal).toLocaleDateString('pl-PL', { day: '2-digit', month: '2-digit', year: 'numeric' }) : 'Brak daty'
-  const endDate = endVal ? new Date(endVal).toLocaleDateString('pl-PL', { day: '2-digit', month: '2-digit', year: 'numeric' }) : 'Brak daty'
-
+// responsywność
+function ResponsiveReservationList({ reservations, onRebook, canRebook, showPayment }) {
   return (
-    <div
-      key={res.id}
-      style={{
-        borderRadius: '4px',
-        padding: '1rem',
-        backgroundColor: '#f8fafc',
-        border: `1px solid ${THEME.borderDefault}`,
-        display: 'flex',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        gap: '1rem',
-        transition: 'border-color 0.15s ease'
-      }}
-      onMouseEnter={(e) => { e.currentTarget.style.borderColor = THEME.borderHover }}
-      onMouseLeave={(e) => { e.currentTarget.style.borderColor = THEME.borderDefault }}
-    >
-      <div style={{ flex: 1 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
-          <span style={{ fontWeight: 700, fontSize: '0.95rem', color: THEME.textDark }}>
-            {item ? item.name : `Zamówienie #${res.id}`}
-          </span>
-          <span style={{
-            fontSize: '0.7rem',
-            padding: '2px 6px',
-            borderRadius: '3px',
-            fontWeight: 700,
-            border: `1px solid ${res.status === 'COMPLETED' ? '#bbf7d0' : THEME.borderDefault}`,
-            backgroundColor: res.status === 'COMPLETED' ? '#dcfce7' : '#e2e8f0',
-            color: res.status === 'COMPLETED' ? '#15803d' : THEME.textDark
-          }}>
-            {res.status}
-          </span>
-        </div>
+    <>
+      {/*dekstop */}
+      <table className="desktop-table" style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.84rem' }}>
+        <thead>
+          <tr style={{ backgroundColor: '#ffffff', borderBottom: `1px solid ${THEME.borderDivider}`, color: THEME.textMuted }}>
+            <th style={{ padding: '10px 12px', fontWeight: 600 }}>Kategoria</th>
+            <th style={{ padding: '10px 12px', fontWeight: 600 }}>Nazwa</th>
+            <th style={{ padding: '10px 12px', fontWeight: 600 }}>Termin</th>
+            <th style={{ padding: '10px 12px', fontWeight: 600 }}>Koszt</th>
+            <th style={{ padding: '10px 12px', fontWeight: 600 }}>Dostawa</th>
+            {showPayment && <th style={{ padding: '10px 12px', fontWeight: 600 }}>Płatność</th>}
+            <th style={{ padding: '10px 12px', fontWeight: 600 }}>Status</th>
+            {canRebook && <th style={{ padding: '10px 12px', fontWeight: 600, textAlign: 'right' }}>Akcja</th>}
+          </tr>
+        </thead>
+        <tbody>
+          {reservations.map((res) => {
+            const isService = isServiceReservation(res)
+            const statusCfg = getStatusConfig(res.status, isService)
+            const StatusIcon = statusCfg.Icon
 
-        <div style={{ fontSize: '0.8rem', color: THEME.textMuted, display: 'flex', flexDirection: 'column', gap: '2px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
-            <Calendar size={13} /> {startDate} — {endDate}
-          </div>
-          <div>
-            Koszt: <strong>{res.totalPrice} zł</strong>
-          </div>
-        </div>
+            const startVal = res.startDate || res.startTime
+            const endVal = res.endDate || res.endTime
+            const startDate = startVal ? new Date(startVal).toLocaleDateString('pl-PL', { day: '2-digit', month: '2-digit', year: 'numeric' }) : '—'
+            const endDate = endVal ? new Date(endVal).toLocaleDateString('pl-PL', { day: '2-digit', month: '2-digit', year: 'numeric' }) : '—'
+
+            const rawName = res.itemName || `Zamówienie #${res.id || res.reservationId}`
+            const cleanName = rawName.replace(/^Usługa:\s*/i, '')
+
+            const delivery = formatDelivery(res)
+            const payment = formatPayment(res)
+
+            return (
+              <tr
+                key={res.id || res.reservationId}
+                style={{
+                  borderBottom: `1px solid ${THEME.borderDivider}`,
+                  backgroundColor: THEME.white,
+                  transition: 'background-color 0.15s ease'
+                }}
+                onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = '#f8fafc' }}
+                onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = THEME.white }}
+              >
+                {/* Kategoria */}
+                <td style={{ padding: '10px 12px', whiteSpace: 'nowrap' }}>
+                  <span style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '4px',
+                    padding: '2px 6px',
+                    borderRadius: '4px',
+                    fontSize: '0.7rem',
+                    fontWeight: 700,
+                    textTransform: 'uppercase',
+                    backgroundColor: isService ? '#f1f5f9' : '#f1f5f9',
+                    color: isService ? '#334155' : '#334155',
+                    border: `1px solid ${isService ? '#cbd5e1' : '#cbd5e1'}`
+                  }}>
+
+                    {isService ? 'Usługa' : 'Sprzęt'}
+                  </span>
+                </td>
+
+                {/* Nazwa */}
+                <td style={{ padding: '10px 12px', fontWeight: 700, color: THEME.textDark }}>
+                  {cleanName}
+                </td>
+
+                {/* Data */}
+                <td style={{ padding: '10px 12px', color: THEME.textMuted, whiteSpace: 'nowrap' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '0.8rem' }}>
+                    <Calendar size={12} />
+                    <span>{startDate} — {endDate}</span>
+                  </div>
+                </td>
+
+                {/* Koszt */}
+                <td style={{ padding: '10px 12px', fontWeight: 700, color: THEME.textDark, whiteSpace: 'nowrap' }}>
+                  {res.totalPrice} zł
+                </td>
+
+                {/* Dostawa */}
+                <td style={{ padding: '10px 12px', color: THEME.textDark, whiteSpace: 'nowrap' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '0.8rem' }}>
+                    <delivery.Icon size={13} color={THEME.textMuted} />
+                    <span>{delivery.label}</span>
+                  </div>
+                </td>
+
+                {/* Płatność */}
+                {showPayment && (
+                  <td style={{ padding: '10px 12px', color: THEME.textDark, whiteSpace: 'nowrap' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                      <span style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '0.8rem' }}>
+                        <CreditCard size={12} color={THEME.textMuted} />
+                        {payment.label}
+                      </span>
+                      <span style={{ fontSize: '0.7rem', color: payment.isPaid ? '#16a34a' : '#475569', fontWeight: 600 }}>
+                        {payment.isPaid ? 'Opłacone' : 'Do opłaty'}
+                      </span>
+                    </div>
+                  </td>
+                )}
+
+                {/* Status */}
+                <td style={{ padding: '10px 12px', whiteSpace: 'nowrap' }}>
+                  <span style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '4px',
+                    padding: '3px 7px',
+                    borderRadius: '4px',
+                    fontSize: '0.72rem',
+                    fontWeight: 700,
+                    backgroundColor: statusCfg.bg,
+                    color: statusCfg.color,
+                    border: `1px solid ${statusCfg.border}`
+                  }}>
+                    <StatusIcon size={12} />
+                    {statusCfg.label}
+                  </span>
+                </td>
+
+                {/* Przycisk Ponów*/}
+                {canRebook && (
+                  <td style={{ padding: '10px 12px', textAlign: 'right', whiteSpace: 'nowrap' }}>
+                    {res.itemId && (
+                      <button
+                        onClick={() => onRebook(res)}
+                        style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '4px',
+                          padding: '5px 10px',
+                          borderRadius: '4px',
+                          border: `1px solid ${THEME.borderDefault}`,
+                          backgroundColor: THEME.primary,
+                          color: THEME.white,
+                          fontSize: '0.75rem',
+                          fontWeight: 600,
+                          cursor: 'pointer'
+                        }}
+                      >
+                        <RotateCcw size={12} />
+                        Ponów
+                      </button>
+                    )}
+                  </td>
+                )}
+              </tr>
+            )
+          })}
+        </tbody>
+      </table>
+
+      {/* mobile version*/}
+      <div className="mobile-cards" style={{ display: 'none', flexDirection: 'column', gap: '0.75rem', padding: '0.75rem' }}>
+        {reservations.map((res) => {
+          const isService = isServiceReservation(res)
+          const statusCfg = getStatusConfig(res.status, isService)
+          const StatusIcon = statusCfg.Icon
+
+          const startVal = res.startDate || res.startTime
+          const endVal = res.endDate || res.endTime
+          const startDate = startVal ? new Date(startVal).toLocaleDateString('pl-PL', { day: '2-digit', month: '2-digit', year: 'numeric' }) : '—'
+          const endDate = endVal ? new Date(endVal).toLocaleDateString('pl-PL', { day: '2-digit', month: '2-digit', year: 'numeric' }) : '—'
+
+          const rawName = res.itemName || `Zamówienie #${res.id || res.reservationId}`
+          const cleanName = rawName.replace(/^Usługa:\s*/i, '')
+
+          const delivery = formatDelivery(res)
+          const payment = formatPayment(res)
+
+          return (
+            <div
+              key={res.id || res.reservationId}
+              style={{
+                backgroundColor: THEME.white,
+                border: `1px solid ${THEME.borderDefault}`,
+                borderRadius: '6px',
+                padding: '0.85rem',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '8px'
+              }}
+            >
+              {/* Kategoria i status */}
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '4px',
+                  padding: '2px 6px',
+                  borderRadius: '4px',
+                  fontSize: '0.7rem',
+                  fontWeight: 700,
+                  textTransform: 'uppercase',
+                  backgroundColor: isService ? '#f1f5f9' : '#f1f5f9',
+                  color: isService ? '#334155' : '#334155',
+                  border: `1px solid ${isService ? '#cbd5e1' : '#cbd5e1'}`
+                }}>
+                  {isService ? 'Usługa' : 'Sprzęt'}
+                </span>
+
+                <span style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '4px',
+                  padding: '3px 7px',
+                  borderRadius: '4px',
+                  fontSize: '0.72rem',
+                  fontWeight: 700,
+                  backgroundColor: statusCfg.bg,
+                  color: statusCfg.color,
+                  border: `1px solid ${statusCfg.border}`
+                }}>
+                  <StatusIcon size={12} />
+                  {statusCfg.label}
+                </span>
+              </div>
+
+              {/* Nazwa */}
+              <div style={{ fontWeight: 700, fontSize: '0.95rem', color: THEME.textDark }}>
+                {cleanName}
+              </div>
+
+              {/* data, koszt, dostawa */}
+              <div style={{ fontSize: '0.78rem', color: THEME.textMuted, display: 'flex', flexDirection: 'column', gap: '3px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+                  <Calendar size={13} />
+                  <span>{startDate} — {endDate}</span>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+                  <delivery.Icon size={13} />
+                  <span>Dostawa: <strong>{delivery.label}</strong></span>
+                </div>
+                {showPayment && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+                    <CreditCard size={13} />
+                    <span>Płatność: <strong>{payment.label}</strong> ({payment.isPaid ? 'Opłacone' : 'Do opłaty'})</span>
+                  </div>
+                )}
+              </div>
+
+              {/* Dolny pasek karty */}
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: `1px solid ${THEME.borderDivider}`, paddingTop: '6px', marginTop: '2px' }}>
+                <span style={{ fontSize: '0.88rem', fontWeight: 800, color: THEME.textDark }}>
+                  {res.totalPrice} zł
+                </span>
+
+                {canRebook && res.itemId && (
+                  <button
+                    onClick={() => onRebook(res)}
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '4px',
+                      padding: '5px 12px',
+                      borderRadius: '4px',
+                      border: `1px solid ${THEME.borderDefault}`,
+                      backgroundColor: THEME.primary,
+                      color: THEME.white,
+                      fontSize: '0.78rem',
+                      fontWeight: 600,
+                      cursor: 'pointer'
+                    }}
+                  >
+                    <RotateCcw size={12} />
+                    Ponów rezerwację
+                  </button>
+                )}
+              </div>
+            </div>
+          )
+        })}
       </div>
-
-      {item && (
-        <button
-          onClick={() => onRebook(item)}
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '5px',
-            padding: '7px 12px',
-            borderRadius: '4px',
-            border: `1px solid ${THEME.borderDefault}`,
-            backgroundColor: THEME.primary,
-            color: THEME.white,
-            fontSize: '0.8rem',
-            fontWeight: 600,
-            cursor: 'pointer',
-            whiteSpace: 'nowrap',
-            transition: 'border-color 0.15s ease'
-          }}
-          onMouseEnter={(e) => { e.currentTarget.style.borderColor = THEME.borderHover }}
-          onMouseLeave={(e) => { e.currentTarget.style.borderColor = THEME.borderDefault }}
-        >
-          <RotateCcw size={14} />
-          Ponów
-        </button>
-      )}
-    </div>
+    </>
   )
 }

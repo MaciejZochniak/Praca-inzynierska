@@ -12,17 +12,19 @@ import org.springframework.web.bind.annotation.*;
 @RestController
 @RequestMapping("/api/reservations")
 @RequiredArgsConstructor
-@CrossOrigin(origins = "http://localhost:5137")
+@CrossOrigin(origins = {"http://localhost:3000", "http://localhost:5173"})
 public class ReservationController {
 
     private final ReservationService reservationService;
+
     @PostMapping
     public ResponseEntity<ReservationResponse> createReservation(@RequestBody ReservationRequest request) {
         ReservationResponse response = reservationService.createReservation(request);
         return ResponseEntity.status(HttpStatus.CREATED).body(response);
     }
+
     @GetMapping("/user/{userId}")
-    public ResponseEntity<List<Reservations>> getUserReservations(@PathVariable Long userId) {
-        return ResponseEntity.ok(reservationService.getUserReservations(userId));
+    public ResponseEntity<List<ReservationResponse>> getUserReservations(@PathVariable Long userId) {
+        return ResponseEntity.ok(reservationService.getReservationsByUserId(userId));
     }
 }

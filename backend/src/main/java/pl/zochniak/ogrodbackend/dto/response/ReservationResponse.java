@@ -9,17 +9,13 @@ import java.math.BigDecimal;
 @NoArgsConstructor
 @AllArgsConstructor
 public class ReservationResponse {
+    private Long id;
     private Long reservationId;
-
-    //status rezerwacji początkowo 
+    private Long itemId;
+    private String itemName;
     private ReservationStatus status;
-
     private LocalDateTime startDate;
     private LocalDateTime endDate;
-
-    //wyliczony łączny koszt rezerwacji
     private BigDecimal totalPrice;
-
-    //informacja dla klienta
     private String message;
 }

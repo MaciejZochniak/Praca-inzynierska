@@ -5,81 +5,95 @@ import pl.zochniak.ogrodbackend.entity.*;
 import pl.zochniak.ogrodbackend.entity.enums.PaymentStatus;
 import pl.zochniak.ogrodbackend.entity.enums.ReservationStatus;
 import pl.zochniak.ogrodbackend.repository.*;
-import lombok.*;
-
-import org.jspecify.annotations.Nullable;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.time.Duration;
 import java.util.List;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
 public class ReservationService {
 
-    private final ItemRepository itemRepository;
     private final ReservationsRepository reservationsRepository;
+    private final ItemRepository itemRepository;
     private final UserRepository userRepository;
     private final DeliveryRepository deliveryRepository;
     private final PaymentsRepository paymentsRepository;
 
+    @Transactional(readOnly = true)
+    public List<ReservationResponse> getReservationsByUserId(Long userId) {
+        return reservationsRepository.findByUserId(userId).stream()
+                .map(r -> {
+                    Item item = r.getItemId();
+                    return ReservationResponse.builder()
+                            .id(r.getId())
+                            .reservationId(r.getId())
+                            .itemId(item != null ? item.getId() : null)
+                            .itemName(item != null ? item.getName() : "Zamówienie #" + r.getId())
+                            .status(r.getStatus())
+                            .startDate(r.getStartTime())
+                            .endDate(r.getEndTime())
+                            .totalPrice(r.getTotalPrice())
+                            .build();
+                })
+                .collect(Collectors.toList());
+    }
+
     @Transactional
     public ReservationResponse createReservation(ReservationRequest request) {
-
-        // Walidacja poprawności dat
-        if (request.getStartDate() == null || request.getEndDate() == null) {
-            throw new IllegalArgumentException("ERROR: Daty rozpoczęcia i zakończenia są wymagane.");
-        }
-        if (!request.getStartDate().isBefore(request.getEndDate())) {
-            throw new IllegalArgumentException("ERROR: Data rozpoczęcia musi być przed datą zakończenia.");
+        if (request.getStartDate() == null || request.getEndDate() == null ||
+                !request.getEndDate().isAfter(request.getStartDate())) {
+            throw new IllegalArgumentException("ERROR: Data zakończenia musi być późniejsza niż data rozpoczęcia");
         }
 
-        //Blokada
         Item item = itemRepository.findByIdWithLock(request.getItemId())
-                .orElseThrow(() -> new IllegalArgumentException("Nie ma sprzętu ID: " + request.getItemId()));
+                .orElseThrow(() -> new IllegalArgumentException("ERROR: Nie znaleziono sprzętu o ID: " + request.getItemId()));
 
         if (Boolean.FALSE.equals(item.getIsAvailable())) {
-            throw new IllegalStateException("ERROR: Sprzęt jest poza użytkowaniem.");
+            throw new IllegalArgumentException("ERROR: Wybrany sprzęt jest niedostępny");
         }
 
-        //walidacja kolizji terminów
         List<Reservations> conflicts = reservationsRepository.findConflictingReservations(
                 item.getId(),
                 request.getStartDate(),
                 request.getEndDate()
         );
+
         if (!conflicts.isEmpty()) {
             throw new IllegalStateException("ERROR: Wybrany termin jest zajęty");
         }
 
-        //Przypisanie klienta lub goscia
+        long days = Duration.between(request.getStartDate(), request.getEndDate()).toDays();
+        if (days <= 0) {
+            days = 1;
+        }
+        BigDecimal totalCost = item.getPrice().multiply(BigDecimal.valueOf(days));
+
         User user = null;
         if (request.getUserId() != null) {
-            user = userRepository.findById(request.getUserId()).orElseThrow(() -> new IllegalArgumentException("Nie znaleziono użytkownika ID: " + request.getUserId()));
+            user = userRepository.findById(request.getUserId())
+                    .orElseThrow(() -> new IllegalArgumentException("ERROR: Nie znaleziono użytkownika"));
         } else {
-            if (request.getGuestEmail() == null || request.getGuestPhone() == null) {
-                throw new IllegalArgumentException("ERROR: Dane gościa są wymagane.");
+            if (request.getGuestName() == null || request.getGuestEmail() == null || request.getGuestPhone() == null) {
+                throw new IllegalArgumentException("ERROR: Dla rezerwacji bez konta wymagane są dane gościa");
             }
         }
 
-        //Kalkulacja kosztów rezerwacji
-        long days = Math.max(1, Duration.between(request.getStartDate(), request.getEndDate()).toDays());
-        BigDecimal totalCost = item.getPrice().multiply(BigDecimal.valueOf(days));
-
-        //utworzenie i zapis encji Reservations
         Reservations reservation = Reservations.builder()
                 .user(user)
                 .guestName(request.getGuestName())
                 .guestEmail(request.getGuestEmail())
                 .guestPhone(request.getGuestPhone())
+                .itemId(item)
                 .startTime(request.getStartDate())
                 .endTime(request.getEndDate())
                 .status(ReservationStatus.PENDING)
                 .totalPrice(totalCost)
                 .build();
 
-        //utworzenie rezerwacji
         Reservations_items itemDetail = Reservations_items.builder()
                 .reservation(reservation)
                 .item(item)
@@ -90,7 +104,6 @@ public class ReservationService {
         reservation.getReservationItems().add(itemDetail);
         Reservations savedReservation = reservationsRepository.save(reservation);
 
-        //ustawienie konfiguracji dostawy
         if (request.getDeliveryType() != null) {
             Delivery delivery = Delivery.builder()
                     .reservation(savedReservation)
@@ -103,8 +116,7 @@ public class ReservationService {
             deliveryRepository.save(delivery);
         }
 
-        //inicjalizacja płatności
-        if (request.getPaymentType() != null){
+        if (request.getPaymentType() != null) {
             Payments payment = Payments.builder()
                     .reservation(savedReservation)
                     .paymentType(request.getPaymentType())
@@ -113,19 +125,17 @@ public class ReservationService {
                     .build();
             paymentsRepository.save(payment);
         }
+
         return ReservationResponse.builder()
+                .id(savedReservation.getId())
                 .reservationId(savedReservation.getId())
+                .itemId(item.getId())
+                .itemName(item.getName())
                 .status(savedReservation.getStatus())
                 .startDate(savedReservation.getStartTime())
                 .endDate(savedReservation.getEndTime())
                 .totalPrice(savedReservation.getTotalPrice())
                 .message("Sukces: Rezerwacja została utworzona. ID rezerwacji: " + savedReservation.getId())
                 .build();
-    }
-    public List<Reservations> getUserReservations(Long userId) {
-        return reservationsRepository.findByUserIdOrderByCreatedAtDesc(userId);
-    }
-    public List<Reservations> getReservationsByUserId(Long userId) {
-        return reservationsRepository.findByUserId(userId);
     }
 }
