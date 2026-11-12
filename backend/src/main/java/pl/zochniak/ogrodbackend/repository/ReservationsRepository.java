@@ -17,15 +17,13 @@ public interface ReservationsRepository extends JpaRepository<Reservations, Long
 
     List<Reservations> findByStatus(ReservationStatus status);
 
-    @Query("SELECT DISTINCT r FROM Reservations r " +
-           "LEFT JOIN r.reservationItems ri " +
-           "WHERE (r.itemId.id = :itemId OR ri.item.id = :itemId) " +
+    @Query("SELECT r FROM Reservations r " +
+           "WHERE r.itemId.id = :itemId " +
            "AND r.status <> pl.zochniak.ogrodbackend.entity.enums.ReservationStatus.CANCELLED")
     List<Reservations> findActiveByItemId(@Param("itemId") Long itemId);
 
-    @Query("SELECT DISTINCT r FROM Reservations r " +
-           "LEFT JOIN r.reservationItems ri " +
-           "WHERE (r.itemId.id = :itemId OR ri.item.id = :itemId) " +
+    @Query("SELECT r FROM Reservations r " +
+           "WHERE r.itemId.id = :itemId " +
            "AND r.status <> pl.zochniak.ogrodbackend.entity.enums.ReservationStatus.CANCELLED " +
            "AND r.startTime < :endDate " +
            "AND r.endTime > :startDate")

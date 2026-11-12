@@ -30,16 +30,37 @@ VALUES
 ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO users (id, email, password_hash, first_name, last_name, phone_number, role, created_at)
-VALUES (
-  1, 
-  'jan.kowalski@example.com', 
-  'tajnehaslo123', 
-  'Jan', 
-  'Kowalski', 
-  '600700800', 
-  'CLIENT', 
-  NOW()
-)
+VALUES 
+  (
+    1, 
+    'jan.kowalski@example.com', 
+    'tajnehaslo123', 
+    'Jan', 
+    'Kowalski', 
+    '600700800', 
+    'CLIENT', 
+    NOW()
+  ),
+  (
+    2, 
+    'karolina.pracownik@example.com', 
+    'tajnehaslo123', 
+    'Karolina', 
+    'Pracowniczka', 
+    '500400300', 
+    'EMPLOYEE', 
+    NOW()
+  ),
+  (
+    3, 
+    'szef@example.com', 
+    'tajnehaslo123', 
+    'Karolina', 
+    'Szefowa', 
+    '123123123', 
+    'ADMIN', 
+    NOW()
+  )
 ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO reservations (id, user_id, item_id, start_time, end_time, total_price, status, created_at)

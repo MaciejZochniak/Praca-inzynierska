@@ -1,11 +1,11 @@
 package pl.zochniak.ogrodbackend.entity;
+
 import jakarta.persistence.*;
 import lombok.*;
-import java.time.LocalDateTime;
-import java.math.BigDecimal;
-import java.util.ArrayList;
-import java.util.List;
 import org.hibernate.annotations.CreationTimestamp;
+
+import java.math.BigDecimal;
+import java.time.LocalDateTime;
 
 @Entity
 @Table(name = "items")
@@ -14,17 +14,17 @@ import org.hibernate.annotations.CreationTimestamp;
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
-
 public class Item {
+
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @ManyToOne(fetch = FetchType.LAZY)
+    @ManyToOne(fetch = FetchType.EAGER)
     @JoinColumn(name = "category_id", nullable = false)
     private Category category;
 
-    @Column(nullable = false, length = 200)
+    @Column(nullable = false, length = 150)
     private String name;
 
     @Column(length = 100)
@@ -33,7 +33,7 @@ public class Item {
     @Column(columnDefinition = "TEXT")
     private String description;
 
-    @Column(name = "price", nullable = false, precision = 10, scale = 2)
+    @Column(nullable = false, precision = 10, scale = 2)
     private BigDecimal price;
 
     @Column(nullable = false)
@@ -44,14 +44,10 @@ public class Item {
     @Builder.Default
     private Boolean isAvailable = true;
 
-    @Column (name = "image_url", length = 200)
+    @Column(name = "image_url", length = 255)
     private String imageUrl;
 
-    @CreationTimestamp 
+    @CreationTimestamp
     @Column(name = "created_at", updatable = false)
     private LocalDateTime createdAt;
-
-    @OneToMany (mappedBy = "item", cascade = CascadeType.ALL)
-    @Builder.Default
-    private List<Price> prices = new ArrayList<>();
 }

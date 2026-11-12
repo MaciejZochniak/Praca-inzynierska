@@ -1,12 +1,12 @@
 package pl.zochniak.ogrodbackend.entity;
-import pl.zochniak.ogrodbackend.entity.enums.ReservationStatus;
+
 import jakarta.persistence.*;
 import lombok.*;
 import org.hibernate.annotations.CreationTimestamp;
+import pl.zochniak.ogrodbackend.entity.enums.ReservationStatus;
+
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
-import java.util.ArrayList;
-import java.util.List;
 
 @Entity
 @Table(name = "reservations")
@@ -16,25 +16,30 @@ import java.util.List;
 @AllArgsConstructor
 @Builder
 public class Reservations {
+
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "user_id", nullable = true)
+    @JoinColumn(name = "user_id")
     private User user;
 
-    @Column (name = "guest_name", nullable = true, length = 100)
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "assigned_employee_id")
+    private User assignedEmployee;
+
+    @Column(name = "guest_name", length = 120)
     private String guestName;
 
-    @Column (name = "guest_email", nullable = true, length = 100)
+    @Column(name = "guest_email", length = 150)
     private String guestEmail;
 
-    @Column (name = "guest_phone", nullable = true, length = 20)
+    @Column(name = "guest_phone", length = 20)
     private String guestPhone;
 
     @ManyToOne(fetch = FetchType.EAGER)
-    @JoinColumn(name = "item_id", nullable = true)
+    @JoinColumn(name = "item_id", nullable = false)
     private Item itemId;
 
     @Column(name = "start_time", nullable = false)
@@ -43,22 +48,24 @@ public class Reservations {
     @Column(name = "end_time", nullable = false)
     private LocalDateTime endTime;
 
-    @Column(nullable = false, precision = 10, scale = 2)
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 30)
+    @Builder.Default
+    private ReservationStatus status = ReservationStatus.PENDING;
+
+    @Column(name = "total_price", nullable = false, precision = 10, scale = 2)
     private BigDecimal totalPrice;
 
-    @Enumerated(EnumType.STRING)
-    @Column(nullable = false, length = 20)
-    private ReservationStatus status;
+    @Column(name = "customer_notes", columnDefinition = "TEXT")
+    private String customerNotes;
 
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn (name = "employee_id", nullable = true)
-    private User employee;
-
-    @CreationTimestamp 
-    @Column(name = "created_at", updatable = false)
+    @CreationTimestamp
+    @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
 
-    @OneToMany(mappedBy = "reservation", cascade = CascadeType.ALL, orphanRemoval = true)
-    @Builder.Default
-    private List<Reservations_items> reservationItems = new ArrayList<>();
+    @OneToOne(mappedBy = "reservation", cascade = CascadeType.ALL)
+    private Delivery delivery;
+
+    @OneToOne(mappedBy = "reservation", cascade = CascadeType.ALL)
+    private Payments payment;
 }

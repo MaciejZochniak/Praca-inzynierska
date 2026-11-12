@@ -6,6 +6,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import pl.zochniak.ogrodbackend.dto.request.ReservationRequest;
 import pl.zochniak.ogrodbackend.dto.response.ReservationResponse;
+import pl.zochniak.ogrodbackend.entity.enums.ReservationStatus;
 import pl.zochniak.ogrodbackend.service.ReservationService;
 
 import java.util.List;
@@ -27,6 +28,19 @@ public class ReservationController {
     @GetMapping("/user/{userId}")
     public ResponseEntity<List<ReservationResponse>> getUserReservations(@PathVariable Long userId) {
         return ResponseEntity.ok(reservationService.getReservationsByUserId(userId));
+    }
+
+    @GetMapping("/schedule/{employeeId}")
+    public ResponseEntity<List<ReservationResponse>> getEmployeeSchedule(@PathVariable Long employeeId) {
+        return ResponseEntity.ok(reservationService.getEmployeeSchedule(employeeId));
+    }
+
+    @PatchMapping("/{reservationId}/status")
+    public ResponseEntity<ReservationResponse> updateStatus(
+            @PathVariable Long reservationId,
+            @RequestParam ReservationStatus status
+    ) {
+        return ResponseEntity.ok(reservationService.updateReservationStatus(reservationId, status));
     }
 
     @GetMapping("/item/{itemId}")

@@ -32,7 +32,6 @@ public class ReservationRequest {
     private PaymentType paymentType;
 
     public PaymentType getPaymentType() {
-        // TODO Auto-generated method stub
         throw new UnsupportedOperationException("Unimplemented method 'getPaymentType'");
     }
 }
