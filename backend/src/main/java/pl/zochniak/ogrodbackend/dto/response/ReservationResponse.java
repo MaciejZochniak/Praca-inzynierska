@@ -28,6 +28,8 @@ public class ReservationResponse {
     private PaymentType paymentType;
     private String clientName;
     private String clientPhone;
+    private String clientEmail;
     private String deliveryAddress;
+    private String customerNotes;
     private String message;
 }

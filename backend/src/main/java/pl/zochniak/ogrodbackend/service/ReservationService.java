@@ -40,9 +40,12 @@ public class ReservationService {
         String clientName = r.getUser() != null
                 ? (r.getUser().getFirstName() + " " + r.getUser().getLastName()).trim()
                 : (r.getGuestName() != null ? r.getGuestName() : "Klient");
-        String clientPhone = r.getUser() != null
+        String clientPhone = r.getUser() != null && r.getUser().getPhoneNumber() != null
                 ? r.getUser().getPhoneNumber()
                 : r.getGuestPhone();
+        String clientEmail = r.getUser() != null
+                ? r.getUser().getEmail()
+                : r.getGuestEmail();
 
         String address = "Odbiór osobisty w punkcie";
         DeliveryType delType = DeliveryType.PICKUP;
@@ -69,7 +72,9 @@ public class ReservationService {
                 .paymentType(r.getPayment() != null ? r.getPayment().getPaymentType() : null)
                 .clientName(clientName)
                 .clientPhone(clientPhone)
+                .clientEmail(clientEmail)
                 .deliveryAddress(address)
+                .customerNotes(r.getCustomerNotes())
                 .build();
     }
 
@@ -95,6 +100,67 @@ public class ReservationService {
         return mapToResponse(reservationsRepository.save(res));
     }
 
+    // Zatwierdzenie szczegółów konsultacji przez pracownika:
+    // 1. Konsultacja zmienia status na COMPLETED
+    // 2. Tworzy się właściwa usługa do realizacji z datą od momentu zakończenia konsultacji
+    @Transactional
+    public ReservationResponse completeConsultationAndScheduleService(
+            Long consultationId,
+            BigDecimal agreedPrice,
+            String estimatedDuration,
+            String details
+    ) {
+        Reservations consultation = reservationsRepository.findById(consultationId)
+                .orElseThrow(() -> new IllegalArgumentException("Nie znaleziono konsultacji o ID: " + consultationId));
+
+        LocalDateTime now = LocalDateTime.now();
+
+        // 1. Oznacz konsultację jako zakończoną
+        consultation.setStatus(ReservationStatus.COMPLETED);
+        consultation.setEndTime(now);
+        String oldNotes = consultation.getCustomerNotes() != null ? consultation.getCustomerNotes() : "";
+        consultation.setCustomerNotes(
+                (oldNotes + " | Ustalono kwotę: " + agreedPrice + " zł, czas: " + estimatedDuration).trim()
+        );
+        reservationsRepository.save(consultation);
+
+        // 2. Utwórz właściwą usługę do realizacji od teraz
+        String serviceNotes = "REALIZACJA USŁUGI | Szacowany czas: " + estimatedDuration
+                + (details != null && !details.isBlank() ? " | Ustalenia: " + details : "")
+                + (!oldNotes.isBlank() ? " | (" + oldNotes + ")" : "");
+
+        Reservations serviceTask = Reservations.builder()
+                .user(consultation.getUser())
+                .assignedEmployee(consultation.getAssignedEmployee())
+                .guestName(consultation.getGuestName())
+                .guestEmail(consultation.getGuestEmail())
+                .guestPhone(consultation.getGuestPhone())
+                .itemId(consultation.getItemId())
+                .startTime(now)
+                .endTime(now.plusHours(8))
+                .status(ReservationStatus.CONFIRMED)
+                .totalPrice(agreedPrice != null ? agreedPrice : consultation.getTotalPrice())
+                .customerNotes(serviceNotes)
+                .build();
+
+        Reservations savedTask = reservationsRepository.save(serviceTask);
+
+        if (consultation.getDelivery() != null) {
+            Delivery del = Delivery.builder()
+                    .reservation(savedTask)
+                    .deliveryType(DeliveryType.DELIVERY)
+                    .street(consultation.getDelivery().getStreet())
+                    .city(consultation.getDelivery().getCity())
+                    .postalCode(consultation.getDelivery().getPostalCode())
+                    .cost(BigDecimal.ZERO)
+                    .build();
+            Delivery savedDel = deliveryRepository.save(del);
+            savedTask.setDelivery(savedDel);
+        }
+
+        return mapToResponse(savedTask);
+    }
+
     @Transactional(readOnly = true)
     public List<Reservations> getActiveReservationsForItem(Long itemId) {
         return reservationsRepository.findActiveByItemId(itemId);
@@ -114,20 +180,24 @@ public class ReservationService {
             throw new IllegalArgumentException("Wybrana oferta jest obecnie niedostępna.");
         }
 
-        List<Reservations> conflicts = reservationsRepository.findConflictingReservations(
-                item.getId(),
-                request.getStartDate(),
-                request.getEndDate()
-        );
+        boolean service = isServiceItem(item);
 
-        int availableQuantity = item.getQuantity() != null ? item.getQuantity() : 1;
-        if (conflicts.size() >= availableQuantity) {
-            throw new IllegalStateException("Wybrany termin jest już zajęty (brak wolnych sztuk/ekip).");
+        // Dla sprzętu sprawdzamy dostępność sztuk; dla konsultacji usługowych sprawdzamy wolnych pracowników
+        if (!service) {
+            List<Reservations> conflicts = reservationsRepository.findConflictingReservations(
+                    item.getId(),
+                    request.getStartDate(),
+                    request.getEndDate()
+            );
+            int availableQuantity = item.getQuantity() != null ? item.getQuantity() : 1;
+            if (conflicts.size() >= availableQuantity) {
+                throw new IllegalStateException("Wybrany termin jest już zajęty (brak wolnych sztuk).");
+            }
         }
 
+        // Przydział pracownika (2 pierwszych od usług/konsultacji, 3. od sprzętu)
         List<User> employees = userRepository.findByRoleOrderByIdAsc(Role.EMPLOYEE);
         User assignedEmployee = null;
-        boolean service = isServiceItem(item);
 
         if (!employees.isEmpty()) {
             if (service) {
@@ -147,7 +217,7 @@ public class ReservationService {
                 }
 
                 if (assignedEmployee == null) {
-                    throw new IllegalStateException("Brak wolnego pracownika usługowego w wybranym dniu (limit 1 usługi dziennie na pracownika został wyczerpany).");
+                    throw new IllegalStateException("Brak wolnego specjalisty w wybranym dniu. Wybierz inny termin konsultacji.");
                 }
             } else {
                 assignedEmployee = employees.get(employees.size() >= 3 ? 2 : employees.size() - 1);
@@ -172,6 +242,11 @@ public class ReservationService {
             throw new IllegalArgumentException("Wymagane są dane kontaktowe.");
         }
 
+        String notes = request.getCustomerNotes();
+        if (service && (notes == null || !notes.startsWith("KONSULTACJA"))) {
+            notes = "KONSULTACJA TELEFONICZNA" + (notes != null && !notes.isBlank() ? " | " + notes : "");
+        }
+
         Reservations reservation = Reservations.builder()
                 .user(user)
                 .assignedEmployee(assignedEmployee)
@@ -183,13 +258,14 @@ public class ReservationService {
                 .endTime(request.getEndDate())
                 .status(ReservationStatus.PENDING)
                 .totalPrice(totalCost)
+                .customerNotes(notes)
                 .build();
 
         Reservations savedReservation = reservationsRepository.save(reservation);
 
         DeliveryType effectiveDeliveryType = request.getDeliveryType() != null
                 ? request.getDeliveryType()
-                : DeliveryType.PICKUP;
+                : (service ? DeliveryType.DELIVERY : DeliveryType.PICKUP);
 
         Delivery delivery = Delivery.builder()
                 .reservation(savedReservation)
@@ -202,7 +278,7 @@ public class ReservationService {
         Delivery savedDelivery = deliveryRepository.save(delivery);
         savedReservation.setDelivery(savedDelivery);
 
-        if (request.getPaymentType() != null) {
+        if (!service && request.getPaymentType() != null) {
             Payments payment = Payments.builder()
                     .reservation(savedReservation)
                     .paymentType(request.getPaymentType())
@@ -214,7 +290,9 @@ public class ReservationService {
         }
 
         ReservationResponse response = mapToResponse(savedReservation);
-        response.setMessage("Rezerwacja została utworzona.");
+        response.setMessage(service
+                ? "Zgłoszenie konsultacji telefonicznej zostało przyjęte."
+                : "Rezerwacja została utworzona.");
         return response;
     }
 }

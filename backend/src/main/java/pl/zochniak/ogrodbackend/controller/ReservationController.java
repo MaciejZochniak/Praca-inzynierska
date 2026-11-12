@@ -9,7 +9,9 @@ import pl.zochniak.ogrodbackend.dto.response.ReservationResponse;
 import pl.zochniak.ogrodbackend.entity.enums.ReservationStatus;
 import pl.zochniak.ogrodbackend.service.ReservationService;
 
+import java.math.BigDecimal;
 import java.util.List;
+import java.util.Map;
 
 @RestController
 @RequestMapping("/api/reservations")
@@ -41,6 +43,28 @@ public class ReservationController {
             @RequestParam ReservationStatus status
     ) {
         return ResponseEntity.ok(reservationService.updateReservationStatus(reservationId, status));
+    }
+
+    @PostMapping("/{consultationId}/confirm-consultation")
+    public ResponseEntity<ReservationResponse> confirmConsultation(
+            @PathVariable Long consultationId,
+            @RequestBody Map<String, Object> body
+    ) {
+        BigDecimal agreedPrice = body.get("agreedPrice") != null
+                ? new BigDecimal(body.get("agreedPrice").toString())
+                : BigDecimal.ZERO;
+        String estimatedDuration = body.get("estimatedDuration") != null
+                ? body.get("estimatedDuration").toString()
+                : "1 dzień";
+        String details = body.get("details") != null
+                ? body.get("details").toString()
+                : "";
+
+        return ResponseEntity.ok(
+                reservationService.completeConsultationAndScheduleService(
+                        consultationId, agreedPrice, estimatedDuration, details
+                )
+        );
     }
 
     @GetMapping("/item/{itemId}")

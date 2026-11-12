@@ -16,10 +16,7 @@ import {
   PlayCircle,
   Clock3,
   ChevronDown,
-  ChevronUp,
-  ChevronLeft,
-  ChevronRight,
-  Calendar as CalendarIcon
+  ChevronUp
 } from 'lucide-react'
 import logoImage from './assets/GardenBookingLogo.png'
 
@@ -35,12 +32,6 @@ const THEME = {
   borderDivider: '#e2e8f0'
 }
 
-const MONTH_NAMES = [
-  'Styczeń', 'Luty', 'Marzec', 'Kwiecień', 'Maj', 'Czerwiec',
-  'Lipiec', 'Sierpień', 'Wrzesień', 'Październik', 'Listopad', 'Grudzień'
-]
-const DAY_NAMES = ['Pon', 'Wt', 'Śr', 'Czw', 'Pt', 'Sob', 'Ndz']
-
 function isServiceReservation(res) {
   const name = (res.itemName || '').toLowerCase()
   return (
@@ -53,6 +44,11 @@ function isServiceReservation(res) {
     name.includes('zakładanie') ||
     name.includes('karczowanie')
   )
+}
+
+function isConsultationRecord(res) {
+  const notes = (res.customerNotes || '').toUpperCase()
+  return isServiceReservation(res) && notes.startsWith('KONSULTACJA')
 }
 
 function getStatusConfig(status, isService) {
@@ -103,9 +99,15 @@ const formatDateShort = (val) => {
   })
 }
 
-const toDateOnly = (val) => {
-  if (!val) return ''
-  return String(val).slice(0, 10)
+const formatDateTimeShort = (val) => {
+  if (!val) return '-'
+  return new Date(val).toLocaleString('pl-PL', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit'
+  })
 }
 
 const getDeliveryLabel = (r, service) => {
@@ -171,13 +173,17 @@ export default function UserPage({ currentUser, onUserUpdate, onRebookItem }) {
   const [reservations, setReservations] = useState([])
   const [resLoading, setResLoading] = useState(false)
 
-  const [currentMonth, setCurrentMonth] = useState(() => {
-    const now = new Date()
-    return new Date(now.getFullYear(), now.getMonth(), 1)
+  // Formularz wprowadzania szczegółów konsultacji przez pracownika
+  const [activeConsultation, setActiveConsultation] = useState(null)
+  const [consultForm, setConsultForm] = useState({
+    agreedPrice: '',
+    estimatedDuration: '1 dzień (ok. 6 godz.)',
+    details: ''
   })
-  const [selectedScheduleDay, setSelectedScheduleDay] = useState(() => {
-    return new Date().toISOString().slice(0, 10)
-  })
+  const [consultSaving, setConsultSaving] = useState(false)
+
+  // Okno potwierdzenia zakończenia lub anulowania zadania
+  const [confirmAction, setConfirmAction] = useState(null)
 
   const fetchReservationsOrSchedule = () => {
     const uid = currentUser?.userId || currentUser?.id
@@ -208,22 +214,11 @@ export default function UserPage({ currentUser, onUserUpdate, onRebookItem }) {
     }
   }, [activeTab, currentUser, isEmployee])
 
-  // Obsługa checkboxa pracownika (oznaczenie zadania jako wykonane / cofnięcie)
-  const handleToggleTaskCheckbox = async (task, checked) => {
-    const resId = task.id || task.reservationId
-    let nextStatus = 'PENDING'
-
-    if (task.taskType === 'HANDOVER_OUT') {
-      // Wydanie sprzętu: zaznaczenie = CONFIRMED (w trakcie wynajmu), odznaczenie = PENDING
-      nextStatus = checked ? 'CONFIRMED' : 'PENDING'
-    } else {
-      // Odbiór sprzętu lub Usługa: zaznaczenie = COMPLETED (zakończone), odznaczenie = CONFIRMED/PENDING
-      nextStatus = checked ? 'COMPLETED' : (task.taskType === 'HANDOVER_IN' ? 'CONFIRMED' : 'PENDING')
-    }
-
+  // Zmiana statusu zadania przez pracownika (wykonane / anulowane)
+  const handleEmployeeStatusUpdate = async (reservationId, newStatus) => {
     try {
       const res = await fetch(
-        `http://localhost:8080/api/reservations/${resId}/status?status=${nextStatus}`,
+        `http://localhost:8080/api/reservations/${reservationId}/status?status=${newStatus}`,
         { method: 'PATCH' }
       )
       if (res.ok) {
@@ -231,6 +226,33 @@ export default function UserPage({ currentUser, onUserUpdate, onRebookItem }) {
       }
     } catch {
       // ignoruj
+    }
+  }
+
+  // Zatwierdzenie szczegółów konsultacji przez pracownika
+  const handleConfirmConsultationSubmit = async (e) => {
+    e.preventDefault()
+    if (!activeConsultation) return
+    setConsultSaving(true)
+
+    const cid = activeConsultation.id || activeConsultation.reservationId
+    try {
+      const res = await fetch(`http://localhost:8080/api/reservations/${cid}/confirm-consultation`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          agreedPrice: Number(consultForm.agreedPrice),
+          estimatedDuration: consultForm.estimatedDuration,
+          details: consultForm.details
+        })
+      })
+      if (res.ok) {
+        setActiveConsultation(null)
+        setConsultForm({ agreedPrice: '', estimatedDuration: '1 dzień (ok. 6 godz.)', details: '' })
+        fetchReservationsOrSchedule()
+      }
+    } finally {
+      setConsultSaving(false)
     }
   }
 
@@ -272,6 +294,7 @@ export default function UserPage({ currentUser, onUserUpdate, onRebookItem }) {
 
   const now = new Date()
 
+  // Dane dla KLIENTA
   const filteredClientReservations = useMemo(() => {
     return reservations.filter((r) => {
       if (reservationCategory === 'ALL') return true
@@ -296,100 +319,71 @@ export default function UserPage({ currentUser, onUserUpdate, onRebookItem }) {
     })
   }, [filteredClientReservations, now])
 
-  const employeeDailyTasks = useMemo(() => {
-    const tasks = []
+  // Dane dla PRACOWNIKA (lista zadań do tabeli)
+  const employeeTaskRows = useMemo(() => {
+    const rows = []
 
     for (const r of reservations) {
       const service = isServiceReservation(r)
-      const startDay = toDateOnly(r.startDate || r.startTime)
-      const endDay = toDateOnly(r.endDate || r.endTime)
+      const isConsult = isConsultationRecord(r)
 
-      if (service) {
-        tasks.push({
+      if (isConsult) {
+        rows.push({
           ...r,
-          taskUniqueId: `${r.id || r.reservationId}-SERVICE`,
-          taskDate: startDay,
-          taskType: 'SERVICE',
-          taskTypeLabel: 'Usługa',
-          isDone: r.status === 'COMPLETED'
+          rowKey: `${r.id}-CONSULT`,
+          taskKind: 'CONSULTATION',
+          taskLabel: 'Konsultacja telefoniczna',
+          displayDate: formatDateTimeShort(r.startDate),
+          isDone: r.status === 'COMPLETED',
+          isCancelled: r.status === 'CANCELLED'
+        })
+      } else if (service) {
+        rows.push({
+          ...r,
+          rowKey: `${r.id}-SERVICE`,
+          taskKind: 'SERVICE',
+          taskLabel: 'Usługa do realizacji',
+          displayDate: formatDateShort(r.startDate),
+          isDone: r.status === 'COMPLETED',
+          isCancelled: r.status === 'CANCELLED'
         })
       } else {
-        if (startDay) {
-          tasks.push({
-            ...r,
-            taskUniqueId: `${r.id || r.reservationId}-OUT`,
-            taskDate: startDay,
-            taskType: 'HANDOVER_OUT',
-            taskTypeLabel: 'Wydanie',
-            isDone: r.status === 'CONFIRMED' || r.status === 'COMPLETED'
-          })
-        }
-        if (endDay) {
-          tasks.push({
-            ...r,
-            taskUniqueId: `${r.id || r.reservationId}-IN`,
-            taskDate: endDay,
-            taskType: 'HANDOVER_IN',
-            taskTypeLabel: 'Odbiór',
-            isDone: r.status === 'COMPLETED'
-          })
-        }
+        rows.push({
+          ...r,
+          rowKey: `${r.id}-OUT`,
+          taskKind: 'HANDOVER_OUT',
+          taskLabel: 'Wydanie sprzętu',
+          displayDate: formatDateShort(r.startDate),
+          isDone: r.status === 'CONFIRMED' || r.status === 'COMPLETED',
+          isCancelled: r.status === 'CANCELLED'
+        })
+        rows.push({
+          ...r,
+          rowKey: `${r.id}-IN`,
+          taskKind: 'HANDOVER_IN',
+          taskLabel: 'Odbiór sprzętu',
+          displayDate: formatDateShort(r.endDate),
+          isDone: r.status === 'COMPLETED',
+          isCancelled: r.status === 'CANCELLED'
+        })
       }
     }
 
-    return tasks.filter((t) => {
+    return rows.filter((row) => {
       if (employeeTaskFilter === 'ALL') return true
-      return t.taskType === employeeTaskFilter
+      return row.taskKind === employeeTaskFilter
     })
   }, [reservations, employeeTaskFilter])
 
-  const getTasksForDay = (dateStr) => {
-    return employeeDailyTasks.filter((t) => t.taskDate === dateStr)
-  }
+  const employeeCurrentTasks = useMemo(
+    () => employeeTaskRows.filter((r) => !r.isDone && !r.isCancelled),
+    [employeeTaskRows]
+  )
 
-  const formatDayCellSummary = (tasks) => {
-    if (!tasks || tasks.length === 0) return 'brak'
-    const outCount = tasks.filter((t) => t.taskType === 'HANDOVER_OUT').length
-    const inCount = tasks.filter((t) => t.taskType === 'HANDOVER_IN').length
-    const srvCount = tasks.filter((t) => t.taskType === 'SERVICE').length
-
-    const parts = []
-    if (outCount > 0) parts.push(`${outCount} wyd.`)
-    if (inCount > 0) parts.push(`${inCount} odb.`)
-    if (srvCount > 0) parts.push(`${srvCount} usł.`)
-    return parts.join(', ')
-  }
-
-  const scheduleCalendarDays = useMemo(() => {
-    const year = currentMonth.getFullYear()
-    const month = currentMonth.getMonth()
-    const firstDayOfMonth = new Date(year, month, 1)
-    const lastDayOfMonth = new Date(year, month + 1, 0)
-
-    const startOffset = (firstDayOfMonth.getDay() + 6) % 7
-    const totalDays = lastDayOfMonth.getDate()
-
-    const days = []
-    for (let i = 0; i < startOffset; i++) {
-      days.push(null)
-    }
-
-    for (let day = 1; day <= totalDays; day++) {
-      const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`
-      const tasks = getTasksForDay(dateStr)
-      days.push({
-        day,
-        dateStr,
-        tasks
-      })
-    }
-    return days
-  }, [currentMonth, employeeDailyTasks])
-
-  const selectedDayTasks = useMemo(() => {
-    if (!selectedScheduleDay) return []
-    return getTasksForDay(selectedScheduleDay)
-  }, [selectedScheduleDay, employeeDailyTasks])
+  const employeeDoneTasks = useMemo(
+    () => employeeTaskRows.filter((r) => r.isDone || r.isCancelled),
+    [employeeTaskRows]
+  )
 
   const handleRebook = (res) => {
     if (onRebookItem) {
@@ -400,6 +394,25 @@ export default function UserPage({ currentUser, onUserUpdate, onRebookItem }) {
 
   if (!currentUser) return null
 
+  const thStyle = {
+    padding: '10px 10px',
+    fontSize: '0.74rem',
+    fontWeight: 700,
+    color: THEME.textMuted,
+    textTransform: 'uppercase',
+    borderBottom: `1px solid ${THEME.borderDivider}`,
+    backgroundColor: '#ffffff',
+    textAlign: 'left'
+  }
+
+  const tdStyle = {
+    padding: '10px 10px',
+    fontSize: '0.83rem',
+    color: THEME.textDark,
+    borderBottom: `1px solid ${THEME.borderDivider}`,
+    verticalAlign: 'middle'
+  }
+
   return (
     <div style={{
       minHeight: '100vh',
@@ -409,7 +422,7 @@ export default function UserPage({ currentUser, onUserUpdate, onRebookItem }) {
       fontFamily: 'system-ui, -apple-system, sans-serif'
     }}>
       <style>{`
-        .res-table-wrapper { display: block; width: 100%; }
+        .res-table-wrapper { display: block; width: 100%; overflow-x: auto; }
         .res-mobile-cards { display: none; }
         @media (max-width: 768px) {
           .res-table-wrapper { display: none; }
@@ -460,7 +473,7 @@ export default function UserPage({ currentUser, onUserUpdate, onRebookItem }) {
         </Link>
       </nav>
 
-      <main style={{ maxWidth: '1040px', margin: '2rem auto', padding: '0 1rem' }}>
+      <main style={{ maxWidth: '1120px', margin: '2rem auto', padding: '0 1rem' }}>
         <div style={{
           backgroundColor: THEME.white,
           borderRadius: '4px',
@@ -507,8 +520,8 @@ export default function UserPage({ currentUser, onUserUpdate, onRebookItem }) {
                 gap: '8px'
               }}
             >
-              {isEmployee ? <CalendarIcon size={16} /> : <Clock size={16} />}
-              {isEmployee ? 'Grafik pracy' : 'Rezerwacje i historia'}
+              <Clock size={16} />
+              {isEmployee ? 'Grafik zadań' : 'Rezerwacje i historia'}
             </button>
           </div>
 
@@ -532,6 +545,7 @@ export default function UserPage({ currentUser, onUserUpdate, onRebookItem }) {
               </div>
             )}
 
+            {/* ZAKŁADKA DANYCH PROFILU */}
             {activeTab === 'PROFILE' && (
               <div>
                 <h3 style={{ margin: '0 0 1.25rem 0', fontSize: '1.15rem', color: THEME.textDark }}>
@@ -539,12 +553,7 @@ export default function UserPage({ currentUser, onUserUpdate, onRebookItem }) {
                 </h3>
 
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
-                  <div style={{
-                    padding: '1rem',
-                    backgroundColor: THEME.bgSoft,
-                    border: `1px solid ${THEME.borderDefault}`,
-                    borderRadius: '4px'
-                  }}>
+                  <div style={{ padding: '1rem', backgroundColor: THEME.bgSoft, border: `1px solid ${THEME.borderDefault}`, borderRadius: '4px' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                       <div>
                         <span style={{ fontSize: '0.78rem', fontWeight: 600, color: THEME.textMuted, display: 'block' }}>
@@ -562,19 +571,7 @@ export default function UserPage({ currentUser, onUserUpdate, onRebookItem }) {
                       {editingField !== 'NAME' ? (
                         <button
                           onClick={() => { setEditingField('NAME'); setProfileMsg(null) }}
-                          style={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '5px',
-                            padding: '6px 14px',
-                            borderRadius: '4px',
-                            border: `1px solid ${THEME.borderDefault}`,
-                            backgroundColor: THEME.white,
-                            color: THEME.textDark,
-                            fontSize: '0.82rem',
-                            fontWeight: 600,
-                            cursor: 'pointer'
-                          }}
+                          style={{ display: 'flex', alignItems: 'center', gap: '5px', padding: '6px 14px', borderRadius: '4px', border: `1px solid ${THEME.borderDefault}`, backgroundColor: THEME.white, fontSize: '0.82rem', fontWeight: 600, cursor: 'pointer' }}
                         >
                           <Edit3 size={14} /> Edytuj
                         </button>
@@ -583,31 +580,13 @@ export default function UserPage({ currentUser, onUserUpdate, onRebookItem }) {
                           <button
                             onClick={handleSave}
                             disabled={loading}
-                            style={{
-                              padding: '6px 14px',
-                              borderRadius: '4px',
-                              border: `1px solid ${THEME.borderDefault}`,
-                              backgroundColor: THEME.primary,
-                              color: THEME.white,
-                              fontSize: '0.82rem',
-                              fontWeight: 600,
-                              cursor: 'pointer'
-                            }}
+                            style={{ padding: '6px 14px', borderRadius: '4px', border: `1px solid ${THEME.borderDefault}`, backgroundColor: THEME.primary, color: THEME.white, fontSize: '0.82rem', fontWeight: 600, cursor: 'pointer' }}
                           >
                             {loading ? 'Zapis...' : 'Zapisz'}
                           </button>
                           <button
                             onClick={() => setEditingField(null)}
-                            style={{
-                              padding: '6px 12px',
-                              borderRadius: '4px',
-                              border: `1px solid ${THEME.borderDefault}`,
-                              backgroundColor: THEME.white,
-                              color: THEME.textDark,
-                              fontSize: '0.82rem',
-                              fontWeight: 600,
-                              cursor: 'pointer'
-                            }}
+                            style={{ padding: '6px 12px', borderRadius: '4px', border: `1px solid ${THEME.borderDefault}`, backgroundColor: THEME.white, fontSize: '0.82rem', fontWeight: 600, cursor: 'pointer' }}
                           >
                             Anuluj
                           </button>
@@ -622,37 +601,20 @@ export default function UserPage({ currentUser, onUserUpdate, onRebookItem }) {
                           placeholder="Imię"
                           value={formData.firstName}
                           onChange={(e) => setFormData({ ...formData, firstName: e.target.value })}
-                          style={{
-                            padding: '8px 10px',
-                            borderRadius: '4px',
-                            border: `1px solid ${THEME.borderDefault}`,
-                            backgroundColor: THEME.white,
-                            fontSize: '0.9rem'
-                          }}
+                          style={{ padding: '8px 10px', borderRadius: '4px', border: `1px solid ${THEME.borderDefault}`, backgroundColor: THEME.white }}
                         />
                         <input
                           type="text"
                           placeholder="Nazwisko"
                           value={formData.lastName}
                           onChange={(e) => setFormData({ ...formData, lastName: e.target.value })}
-                          style={{
-                            padding: '8px 10px',
-                            borderRadius: '4px',
-                            border: `1px solid ${THEME.borderDefault}`,
-                            backgroundColor: THEME.white,
-                            fontSize: '0.9rem'
-                          }}
+                          style={{ padding: '8px 10px', borderRadius: '4px', border: `1px solid ${THEME.borderDefault}`, backgroundColor: THEME.white }}
                         />
                       </div>
                     )}
                   </div>
 
-                  <div style={{
-                    padding: '1rem',
-                    backgroundColor: THEME.bgSoft,
-                    border: `1px solid ${THEME.borderDefault}`,
-                    borderRadius: '4px'
-                  }}>
+                  <div style={{ padding: '1rem', backgroundColor: THEME.bgSoft, border: `1px solid ${THEME.borderDefault}`, borderRadius: '4px' }}>
                     <span style={{ fontSize: '0.78rem', fontWeight: 600, color: THEME.textMuted, display: 'block' }}>
                       Adres e-mail
                     </span>
@@ -661,12 +623,7 @@ export default function UserPage({ currentUser, onUserUpdate, onRebookItem }) {
                     </span>
                   </div>
 
-                  <div style={{
-                    padding: '1rem',
-                    backgroundColor: THEME.bgSoft,
-                    border: `1px solid ${THEME.borderDefault}`,
-                    borderRadius: '4px'
-                  }}>
+                  <div style={{ padding: '1rem', backgroundColor: THEME.bgSoft, border: `1px solid ${THEME.borderDefault}`, borderRadius: '4px' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                       <div>
                         <span style={{ fontSize: '0.78rem', fontWeight: 600, color: THEME.textMuted, display: 'block' }}>
@@ -682,19 +639,7 @@ export default function UserPage({ currentUser, onUserUpdate, onRebookItem }) {
                       {editingField !== 'PHONE' ? (
                         <button
                           onClick={() => { setEditingField('PHONE'); setProfileMsg(null) }}
-                          style={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '5px',
-                            padding: '6px 14px',
-                            borderRadius: '4px',
-                            border: `1px solid ${THEME.borderDefault}`,
-                            backgroundColor: THEME.white,
-                            color: THEME.textDark,
-                            fontSize: '0.82rem',
-                            fontWeight: 600,
-                            cursor: 'pointer'
-                          }}
+                          style={{ display: 'flex', alignItems: 'center', gap: '5px', padding: '6px 14px', borderRadius: '4px', border: `1px solid ${THEME.borderDefault}`, backgroundColor: THEME.white, fontSize: '0.82rem', fontWeight: 600, cursor: 'pointer' }}
                         >
                           {formData.phoneNumber ? <><Edit3 size={14} /> Edytuj</> : <><Plus size={14} /> Dodaj</>}
                         </button>
@@ -703,31 +648,13 @@ export default function UserPage({ currentUser, onUserUpdate, onRebookItem }) {
                           <button
                             onClick={handleSave}
                             disabled={loading}
-                            style={{
-                              padding: '6px 14px',
-                              borderRadius: '4px',
-                              border: `1px solid ${THEME.borderDefault}`,
-                              backgroundColor: THEME.primary,
-                              color: THEME.white,
-                              fontSize: '0.82rem',
-                              fontWeight: 600,
-                              cursor: 'pointer'
-                            }}
+                            style={{ padding: '6px 14px', borderRadius: '4px', border: `1px solid ${THEME.borderDefault}`, backgroundColor: THEME.primary, color: THEME.white, fontSize: '0.82rem', fontWeight: 600, cursor: 'pointer' }}
                           >
                             {loading ? 'Zapis...' : 'Zapisz'}
                           </button>
                           <button
                             onClick={() => setEditingField(null)}
-                            style={{
-                              padding: '6px 12px',
-                              borderRadius: '4px',
-                              border: `1px solid ${THEME.borderDefault}`,
-                              backgroundColor: THEME.white,
-                              color: THEME.textDark,
-                              fontSize: '0.82rem',
-                              fontWeight: 600,
-                              cursor: 'pointer'
-                            }}
+                            style={{ padding: '6px 12px', borderRadius: '4px', border: `1px solid ${THEME.borderDefault}`, backgroundColor: THEME.white, fontSize: '0.82rem', fontWeight: 600, cursor: 'pointer' }}
                           >
                             Anuluj
                           </button>
@@ -742,47 +669,22 @@ export default function UserPage({ currentUser, onUserUpdate, onRebookItem }) {
                           placeholder="np. 600700800"
                           value={formData.phoneNumber}
                           onChange={(e) => setFormData({ ...formData, phoneNumber: e.target.value })}
-                          style={{
-                            width: '100%',
-                            padding: '8px 10px',
-                            borderRadius: '4px',
-                            border: `1px solid ${THEME.borderDefault}`,
-                            backgroundColor: THEME.white,
-                            fontSize: '0.9rem',
-                            boxSizing: 'border-box'
-                          }}
+                          style={{ width: '100%', padding: '8px 10px', borderRadius: '4px', border: `1px solid ${THEME.borderDefault}`, backgroundColor: THEME.white, boxSizing: 'border-box' }}
                         />
                       </div>
                     )}
                   </div>
 
-                  <div style={{
-                    padding: '1.25rem',
-                    backgroundColor: THEME.bgSoft,
-                    border: `1px solid ${THEME.borderDefault}`,
-                    borderRadius: '4px',
-                    marginTop: '0.5rem'
-                  }}>
+                  <div style={{ padding: '1.25rem', backgroundColor: THEME.bgSoft, border: `1px solid ${THEME.borderDefault}`, borderRadius: '4px' }}>
                     {!isChangingPassword ? (
                       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                           <KeyRound size={17} color={THEME.textMuted} />
-                          <span style={{ fontSize: '0.9rem', fontWeight: 600, color: THEME.textDark }}>
-                            Chcesz zmienić hasło?
-                          </span>
+                          <span style={{ fontSize: '0.9rem', fontWeight: 600 }}>Chcesz zmienić hasło?</span>
                         </div>
                         <button
                           onClick={() => { setIsChangingPassword(true); setProfileMsg(null) }}
-                          style={{
-                            padding: '6px 14px',
-                            borderRadius: '4px',
-                            border: `1px solid ${THEME.borderDefault}`,
-                            backgroundColor: THEME.white,
-                            color: THEME.textDark,
-                            fontSize: '0.82rem',
-                            fontWeight: 600,
-                            cursor: 'pointer'
-                          }}
+                          style={{ padding: '6px 14px', borderRadius: '4px', border: `1px solid ${THEME.borderDefault}`, backgroundColor: THEME.white, fontSize: '0.82rem', fontWeight: 600, cursor: 'pointer' }}
                         >
                           Kliknij, aby zmienić
                         </button>
@@ -796,18 +698,9 @@ export default function UserPage({ currentUser, onUserUpdate, onRebookItem }) {
                             required
                             value={formData.currentPassword}
                             onChange={(e) => setFormData({ ...formData, currentPassword: e.target.value })}
-                            style={{
-                              width: '100%',
-                              padding: '8px 10px',
-                              marginTop: '4px',
-                              borderRadius: '4px',
-                              border: `1px solid ${THEME.borderDefault}`,
-                              backgroundColor: THEME.white,
-                              boxSizing: 'border-box'
-                            }}
+                            style={{ width: '100%', padding: '8px 10px', marginTop: '4px', borderRadius: '4px', border: `1px solid ${THEME.borderDefault}`, backgroundColor: THEME.white, boxSizing: 'border-box' }}
                           />
                         </label>
-
                         <label style={{ fontSize: '0.8rem', fontWeight: 600, color: THEME.textMuted }}>
                           Nowe hasło:
                           <input
@@ -815,51 +708,21 @@ export default function UserPage({ currentUser, onUserUpdate, onRebookItem }) {
                             required
                             value={formData.password}
                             onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-                            style={{
-                              width: '100%',
-                              padding: '8px 10px',
-                              marginTop: '4px',
-                              borderRadius: '4px',
-                              border: `1px solid ${THEME.borderDefault}`,
-                              backgroundColor: THEME.white,
-                              boxSizing: 'border-box'
-                            }}
+                            style={{ width: '100%', padding: '8px 10px', marginTop: '4px', borderRadius: '4px', border: `1px solid ${THEME.borderDefault}`, backgroundColor: THEME.white, boxSizing: 'border-box' }}
                           />
                         </label>
-
                         <div style={{ display: 'flex', gap: '8px' }}>
                           <button
                             type="submit"
                             disabled={loading}
-                            style={{
-                              padding: '8px 16px',
-                              borderRadius: '4px',
-                              border: `1px solid ${THEME.borderDefault}`,
-                              backgroundColor: THEME.primary,
-                              color: THEME.white,
-                              fontSize: '0.85rem',
-                              fontWeight: 600,
-                              cursor: 'pointer'
-                            }}
+                            style={{ padding: '8px 16px', borderRadius: '4px', border: `1px solid ${THEME.borderDefault}`, backgroundColor: THEME.primary, color: THEME.white, fontSize: '0.85rem', fontWeight: 600, cursor: 'pointer' }}
                           >
                             Zapisz nowe hasło
                           </button>
                           <button
                             type="button"
-                            onClick={() => {
-                              setIsChangingPassword(false)
-                              setFormData((prev) => ({ ...prev, currentPassword: '', password: '' }))
-                            }}
-                            style={{
-                              padding: '8px 14px',
-                              borderRadius: '4px',
-                              border: `1px solid ${THEME.borderDefault}`,
-                              backgroundColor: THEME.white,
-                              color: THEME.textDark,
-                              fontSize: '0.85rem',
-                              fontWeight: 600,
-                              cursor: 'pointer'
-                            }}
+                            onClick={() => { setIsChangingPassword(false); setFormData((prev) => ({ ...prev, currentPassword: '', password: '' })) }}
+                            style={{ padding: '8px 14px', borderRadius: '4px', border: `1px solid ${THEME.borderDefault}`, backgroundColor: THEME.white, fontSize: '0.85rem', fontWeight: 600, cursor: 'pointer' }}
                           >
                             Anuluj
                           </button>
@@ -871,343 +734,601 @@ export default function UserPage({ currentUser, onUserUpdate, onRebookItem }) {
               </div>
             )}
 
-            {/* ZAKŁADKA REZERWACJI (KLIENT) LUB GRAFIKU W KALENDARZU (PRACOWNIK) */}
-            {activeTab === 'RESERVATIONS' && (
+            {/* ZAKŁADKA GRAFIKU PRACOWNIKA (TABELA) */}
+            {activeTab === 'RESERVATIONS' && isEmployee && (
               <div>
-                {resLoading && <p style={{ color: THEME.textMuted, fontSize: '0.85rem' }}>Ładowanie danych...</p>}
+                <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1.25rem', flexWrap: 'wrap' }}>
+                  {[
+                    { id: 'ALL', label: 'Wszystkie' },
+                    { id: 'CONSULTATION', label: 'Konsultacje' },
+                    { id: 'SERVICE', label: 'Usługi do realizacji' },
+                    { id: 'HANDOVER_OUT', label: 'Wydania sprzętu' },
+                    { id: 'HANDOVER_IN', label: 'Odbiory sprzętu' }
+                  ].map((cat) => (
+                    <button
+                      key={cat.id}
+                      onClick={() => setEmployeeTaskFilter(cat.id)}
+                      style={{
+                        padding: '6px 14px',
+                        borderRadius: '4px',
+                        border: `1px solid ${employeeTaskFilter === cat.id ? THEME.primary : THEME.borderDefault}`,
+                        fontSize: '0.8rem',
+                        fontWeight: 600,
+                        cursor: 'pointer',
+                        backgroundColor: employeeTaskFilter === cat.id ? THEME.primary : THEME.bgSoft,
+                        color: employeeTaskFilter === cat.id ? THEME.white : THEME.textDark
+                      }}
+                    >
+                      {cat.label}
+                    </button>
+                  ))}
+                </div>
 
-                {/* MINIMALISTYCZNY WIDOK GRAFIKU DLA PRACOWNIKA (EMPLOYEE) */}
-                {!resLoading && isEmployee && (
-                  <div>
-                    <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1.25rem', flexWrap: 'wrap' }}>
-                      {[
-                        { id: 'ALL', label: 'Wszystkie' },
-                        { id: 'HANDOVER_OUT', label: 'Wydania' },
-                        { id: 'HANDOVER_IN', label: 'Odbiory' },
-                        { id: 'SERVICE', label: 'Usługi' }
-                      ].map((cat) => (
-                        <button
-                          key={cat.id}
-                          onClick={() => setEmployeeTaskFilter(cat.id)}
-                          style={{
-                            padding: '6px 14px',
-                            borderRadius: '4px',
-                            border: `1px solid ${employeeTaskFilter === cat.id ? THEME.primary : THEME.borderDefault}`,
-                            fontSize: '0.8rem',
-                            fontWeight: 600,
-                            cursor: 'pointer',
-                            backgroundColor: employeeTaskFilter === cat.id ? THEME.primary : THEME.bgSoft,
-                            color: employeeTaskFilter === cat.id ? THEME.white : THEME.textDark
-                          }}
-                        >
-                          {cat.label}
-                        </button>
-                      ))}
+                {/* FORMULARZ WPROWADZANIA SZCZEGÓŁÓW KONSULTACJI PRZEZ PRACOWNIKA */}
+                {activeConsultation && (
+                  <div style={{
+                    marginBottom: '1.5rem',
+                    padding: '1.25rem',
+                    borderRadius: '4px',
+                    border: `1px solid ${THEME.borderHover}`,
+                    backgroundColor: THEME.bgSoft
+                  }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
+                      <h4 style={{ margin: 0, fontSize: '1rem', fontWeight: 800 }}>
+                        Ustalenia po konsultacji: {(activeConsultation.itemName || '').replace(/^Usługa:\s*/i, '')}
+                      </h4>
+                      <button
+                        type="button"
+                        onClick={() => setActiveConsultation(null)}
+                        style={{ padding: '4px 10px', borderRadius: '4px', border: `1px solid ${THEME.borderDefault}`, backgroundColor: THEME.white, fontSize: '0.8rem', cursor: 'pointer' }}
+                      >
+                        Zamknij
+                      </button>
                     </div>
 
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', flexWrap: 'wrap', gap: '10px' }}>
+                    <p style={{ fontSize: '0.82rem', color: THEME.textMuted, margin: '0 0 1rem 0' }}>
+                      Klient: <strong>{activeConsultation.clientName}</strong> (tel. {activeConsultation.clientPhone}) | {activeConsultation.customerNotes}
+                    </p>
+
+                    <form onSubmit={handleConfirmConsultationSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '0.85rem' }}>
+                        <div>
+                          <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 700, color: THEME.textMuted, marginBottom: '4px' }}>
+                            Ustalona kwota (zł)
+                          </label>
+                          <input
+                            type="number"
+                            min="1"
+                            step="0.01"
+                            required
+                            placeholder="np. 450"
+                            value={consultForm.agreedPrice}
+                            onChange={(e) => setConsultForm({ ...consultForm, agreedPrice: e.target.value })}
+                            style={{ width: '100%', padding: '8px 10px', borderRadius: '4px', border: `1px solid ${THEME.borderDefault}`, backgroundColor: THEME.white, boxSizing: 'border-box' }}
+                          />
+                        </div>
+
+                        <div>
+                          <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 700, color: THEME.textMuted, marginBottom: '4px' }}>
+                            Przybliżony czas realizacji
+                          </label>
+                          <input
+                            type="text"
+                            required
+                            placeholder="np. 1 dzień (ok. 6 godz.)"
+                            value={consultForm.estimatedDuration}
+                            onChange={(e) => setConsultForm({ ...consultForm, estimatedDuration: e.target.value })}
+                            style={{ width: '100%', padding: '8px 10px', borderRadius: '4px', border: `1px solid ${THEME.borderDefault}`, backgroundColor: THEME.white, boxSizing: 'border-box' }}
+                          />
+                        </div>
+                      </div>
+
                       <div>
-                        <h3 style={{ fontSize: '1.1rem', fontWeight: 800, margin: 0 }}>
-                          Kalendarz zadań
-                        </h3>
-                        <p style={{ fontSize: '0.82rem', color: THEME.textMuted, margin: '2px 0 0 0' }}>
-                          Kliknij dzień w kalendarzu, aby zobaczyć zaplanowane zadania.
-                        </p>
+                        <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 700, color: THEME.textMuted, marginBottom: '4px' }}>
+                          Szczegóły ustalone z klientem (zakres prac, materiały, dojazd)
+                        </label>
+                        <input
+                          type="text"
+                          required
+                          placeholder="np. Koszenie z wywozem trawy + nawożenie, start od jutra"
+                          value={consultForm.details}
+                          onChange={(e) => setConsultForm({ ...consultForm, details: e.target.value })}
+                          style={{ width: '100%', padding: '8px 10px', borderRadius: '4px', border: `1px solid ${THEME.borderDefault}`, backgroundColor: THEME.white, boxSizing: 'border-box' }}
+                        />
                       </div>
 
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
                         <button
-                          type="button"
-                          onClick={() => setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() - 1, 1))}
+                          type="submit"
+                          disabled={consultSaving}
                           style={{
-                            width: '32px',
-                            height: '32px',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
+                            padding: '9px 20px',
                             borderRadius: '4px',
-                            border: `1px solid ${THEME.borderDefault}`,
-                            backgroundColor: THEME.white,
+                            border: `1px solid ${THEME.primary}`,
+                            backgroundColor: THEME.primary,
+                            color: THEME.white,
+                            fontSize: '0.85rem',
+                            fontWeight: 700,
                             cursor: 'pointer'
                           }}
                         >
-                          <ChevronLeft size={16} />
-                        </button>
-                        <span style={{ fontWeight: 700, fontSize: '0.92rem', minWidth: '140px', textAlign: 'center' }}>
-                          {MONTH_NAMES[currentMonth.getMonth()]} {currentMonth.getFullYear()}
-                        </span>
-                        <button
-                          type="button"
-                          onClick={() => setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 1))}
-                          style={{
-                            width: '32px',
-                            height: '32px',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            borderRadius: '4px',
-                            border: `1px solid ${THEME.borderDefault}`,
-                            backgroundColor: THEME.white,
-                            cursor: 'pointer'
-                          }}
-                        >
-                          <ChevronRight size={16} />
+                          {consultSaving ? 'Zapisywanie...' : 'Zatwierdź szczegóły'}
                         </button>
                       </div>
-                    </div>
+                    </form>
+                  </div>
+                )}
 
-                    <div style={{
-                      display: 'grid',
-                      gridTemplateColumns: 'repeat(7, 1fr)',
-                      gap: '6px',
-                      textAlign: 'center',
-                      fontSize: '0.78rem',
-                      fontWeight: 700,
-                      color: THEME.textMuted,
-                      marginBottom: '6px'
-                    }}>
-                      {DAY_NAMES.map((d) => <div key={d}>{d}</div>)}
-                    </div>
+                {resLoading && <p style={{ color: THEME.textMuted, fontSize: '0.85rem' }}>Ładowanie grafiku...</p>}
 
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '6px' }}>
-                      {scheduleCalendarDays.map((dayObj, idx) => {
-                        if (!dayObj) {
-                          return <div key={`empty-${idx}`} style={{ height: '62px' }} />
-                        }
+                {!resLoading && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+                    {/* TABELA 1: BIEŻĄCE KONSULTACJE, USŁUGI DO REALIZACJI ORAZ WYDANIA/ODBIORY */}
+                    <div style={{ border: `1px solid ${THEME.borderDefault}`, borderRadius: '4px', overflow: 'hidden' }}>
+                      <button
+                        type="button"
+                        onClick={() => setOpenCurrentSection(!openCurrentSection)}
+                        style={{
+                          width: '100%',
+                          padding: '12px 16px',
+                          backgroundColor: THEME.bgSoft,
+                          border: 'none',
+                          borderBottom: openCurrentSection ? `1px solid ${THEME.borderDivider}` : 'none',
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          alignItems: 'center',
+                          cursor: 'pointer',
+                          color: THEME.textDark,
+                          fontWeight: 700,
+                          fontSize: '0.9rem'
+                        }}
+                      >
+                        <span>Do wykonania ({employeeCurrentTasks.length})</span>
+                        {openCurrentSection ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
+                      </button>
 
-                        const isSelected = selectedScheduleDay === dayObj.dateStr
-                        const hasTasks = dayObj.tasks.length > 0
+                      {openCurrentSection && (
+                        employeeCurrentTasks.length === 0 ? (
+                          <div style={{ padding: '1rem', fontSize: '0.84rem', color: THEME.textMuted }}>
+                            Brak bieżących zadań w grafiku.
+                          </div>
+                        ) : (
+                          <div style={{ width: '100%', overflowX: 'auto' }}>
+                            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                              <thead>
+                                <tr>
+                                  <th style={thStyle}>Typ zadania</th>
+                                  <th style={thStyle}>Nazwa</th>
+                                  <th style={thStyle}>Data / Godzina</th>
+                                  <th style={thStyle}>Klient i adres</th>
+                                  <th style={thStyle}>Szczegóły / Kwota</th>
+                                  <th style={{ ...thStyle, textAlign: 'right' }}>Akcja</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {employeeCurrentTasks.map((task) => {
+                                  const cleanName = (task.itemName || '').replace(/^Usługa:\s*/i, '')
+                                  const resId = task.id || task.reservationId
 
-                        return (
-                          <div
-                            key={dayObj.dateStr}
-                            onClick={() => setSelectedScheduleDay(dayObj.dateStr)}
-                            style={{
-                              height: '62px',
-                              borderRadius: '4px',
-                              border: isSelected
-                                ? `2px solid ${THEME.textDark}`
-                                : `1px solid ${THEME.borderDefault}`,
-                              backgroundColor: isSelected
-                                ? '#e2e8f0'
-                                : hasTasks
-                                  ? THEME.white
-                                  : '#f8fafc',
-                              color: THEME.textDark,
-                              display: 'flex',
-                              flexDirection: 'column',
-                              alignItems: 'center',
-                              justifyContent: 'center',
-                              cursor: 'pointer',
-                              userSelect: 'none'
-                            }}
-                          >
-                            <span style={{ fontSize: '0.95rem', fontWeight: isSelected || hasTasks ? 800 : 600 }}>
-                              {dayObj.day}
-                            </span>
-                            <span style={{
-                              fontSize: '0.67rem',
-                              color: hasTasks ? THEME.textDark : '#94a3b8',
-                              marginTop: '2px'
-                            }}>
-                              {formatDayCellSummary(dayObj.tasks)}
-                            </span>
+                                  return (
+                                    <tr key={task.rowKey}>
+                                      <td style={tdStyle}>
+                                        <span style={{
+                                          padding: '3px 7px',
+                                          borderRadius: '4px',
+                                          fontSize: '0.72rem',
+                                          fontWeight: 700,
+                                          backgroundColor: THEME.bgSoft,
+                                          border: `1px solid ${THEME.borderDefault}`,
+                                          whiteSpace: 'nowrap'
+                                        }}>
+                                          {task.taskLabel}
+                                        </span>
+                                      </td>
+
+                                      <td style={{ ...tdStyle, fontWeight: 700 }}>{cleanName}</td>
+
+                                      <td style={{ ...tdStyle, whiteSpace: 'nowrap', fontSize: '0.8rem' }}>
+                                        {task.displayDate}
+                                      </td>
+
+                                      <td style={{ ...tdStyle, fontSize: '0.8rem' }}>
+                                        <div><strong>{task.clientName}</strong> (tel. {task.clientPhone || '-'})</div>
+                                        <div style={{ color: THEME.textMuted }}>{task.deliveryAddress}</div>
+                                      </td>
+
+                                      <td style={{ ...tdStyle, fontSize: '0.8rem' }}>
+                                        {task.taskKind === 'CONSULTATION' ? (
+                                          <span style={{ color: THEME.textMuted }}>{task.customerNotes || 'Konsultacja wstępna'}</span>
+                                        ) : (
+                                          <div>
+                                            <strong>{task.totalPrice} zł</strong>
+                                            {task.customerNotes && (
+                                              <div style={{ color: THEME.textMuted, fontSize: '0.76rem' }}>{task.customerNotes}</div>
+                                            )}
+                                          </div>
+                                        )}
+                                      </td>
+
+                                      <td style={{ ...tdStyle, textAlign: 'right', whiteSpace: 'nowrap' }}>
+                                        {task.taskKind === 'CONSULTATION' ? (
+                                          <div style={{ display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
+                                            <button
+                                              type="button"
+                                              onClick={() => {
+                                                setActiveConsultation(task)
+                                                setConsultForm({
+                                                  agreedPrice: task.totalPrice || '',
+                                                  estimatedDuration: '1 dzień (ok. 6 godz.)',
+                                                  details: ''
+                                                })
+                                              }}
+                                              style={{
+                                                padding: '6px 12px',
+                                                borderRadius: '4px',
+                                                border: `1px solid ${THEME.primary}`,
+                                                backgroundColor: THEME.primary,
+                                                color: THEME.white,
+                                                fontSize: '0.78rem',
+                                                fontWeight: 600,
+                                                cursor: 'pointer'
+                                              }}
+                                            >
+                                              Wprowadź szczegóły
+                                            </button>
+
+                                            <button
+                                              type="button"
+                                              onClick={() => {
+                                                setConfirmAction({
+                                                  resId,
+                                                  nextStatus: 'CANCELLED',
+                                                  title: 'Potwierdzenie anulowania',
+                                                  message: `Czy na pewno chcesz anulować konsultację „${cleanName}” dla klienta ${task.clientName}?`
+                                                })
+                                              }}
+                                              style={{
+                                                padding: '5px 8px',
+                                                borderRadius: '4px',
+                                                border: `1px solid ${THEME.borderDefault}`,
+                                                backgroundColor: THEME.white,
+                                                color: THEME.textMuted,
+                                                fontSize: '0.75rem',
+                                                cursor: 'pointer'
+                                              }}
+                                            >
+                                              Anuluj
+                                            </button>
+                                          </div>
+                                        ) : (
+                                          <div style={{ display: 'inline-flex', alignItems: 'center', gap: '10px' }}>
+                                            <label style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', fontSize: '0.8rem', fontWeight: 600, cursor: 'pointer' }}>
+                                              <input
+                                                type="checkbox"
+                                                checked={false}
+                                                onChange={() => {
+                                                  const nextStatus = task.taskKind === 'HANDOVER_OUT' ? 'CONFIRMED' : 'COMPLETED'
+                                                  setConfirmAction({
+                                                    resId,
+                                                    nextStatus,
+                                                    title: 'Potwierdzenie wykonania zadania',
+                                                    message: `Czy na pewno chcesz oznaczyć zadanie „${task.taskLabel}: ${cleanName}” jako wykonane?`
+                                                  })
+                                                }}
+                                                style={{ width: '15px', height: '15px', accentColor: THEME.primary, cursor: 'pointer' }}
+                                              />
+                                              Zakończone
+                                            </label>
+
+                                            <button
+                                              type="button"
+                                              onClick={() => {
+                                                setConfirmAction({
+                                                  resId,
+                                                  nextStatus: 'CANCELLED',
+                                                  title: 'Potwierdzenie anulowania',
+                                                  message: `Czy na pewno chcesz anulować zlecenie „${cleanName}” dla klienta ${task.clientName}?`
+                                                })
+                                              }}
+                                              style={{
+                                                padding: '4px 8px',
+                                                borderRadius: '4px',
+                                                border: `1px solid ${THEME.borderDefault}`,
+                                                backgroundColor: THEME.white,
+                                                color: THEME.textMuted,
+                                                fontSize: '0.75rem',
+                                                cursor: 'pointer'
+                                              }}
+                                            >
+                                              Anuluj
+                                            </button>
+                                          </div>
+                                        )}
+                                      </td>
+                                    </tr>
+                                  )
+                                })}
+                              </tbody>
+                            </table>
                           </div>
                         )
-                      })}
+                      )}
                     </div>
 
-                    {/* Minimalistyczna lista zadań pod kalendarzem ze zwykłym checkboxem */}
-                    <div style={{ marginTop: '1.5rem', borderTop: `1px solid ${THEME.borderDivider}`, paddingTop: '1.25rem' }}>
-                      <h4 style={{ margin: '0 0 0.85rem 0', fontSize: '0.95rem', fontWeight: 700 }}>
-                        Zadania na dzień {selectedScheduleDay} ({selectedDayTasks.length})
-                      </h4>
+                    {/* TABELA 2: ZAKOŃCZONE I ANULOWANE ZADANIA PRACOWNIKA */}
+                    <div style={{ border: `1px solid ${THEME.borderDefault}`, borderRadius: '4px', overflow: 'hidden' }}>
+                      <button
+                        type="button"
+                        onClick={() => setOpenHistorySection(!openHistorySection)}
+                        style={{
+                          width: '100%',
+                          padding: '12px 16px',
+                          backgroundColor: THEME.bgSoft,
+                          border: 'none',
+                          borderBottom: openHistorySection ? `1px solid ${THEME.borderDivider}` : 'none',
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          alignItems: 'center',
+                          cursor: 'pointer',
+                          color: THEME.textDark,
+                          fontWeight: 700,
+                          fontSize: '0.9rem'
+                        }}
+                      >
+                        <span>Zakończone i anulowane ({employeeDoneTasks.length})</span>
+                        {openHistorySection ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
+                      </button>
 
-                      {selectedDayTasks.length === 0 ? (
-                        <p style={{ fontSize: '0.85rem', color: THEME.textMuted, margin: 0 }}>
-                          Brak zadań w wybranym dniu.
-                        </p>
-                      ) : (
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.65rem' }}>
-                          {selectedDayTasks.map((task) => {
-                            const service = task.taskType === 'SERVICE'
-                            const cleanName = (task.itemName || '').replace(/^Usługa:\s*/i, '')
+                      {openHistorySection && (
+                        employeeDoneTasks.length === 0 ? (
+                          <div style={{ padding: '1rem', fontSize: '0.84rem', color: THEME.textMuted }}>
+                            Brak zakończonych zadań.
+                          </div>
+                        ) : (
+                          <div style={{ width: '100%', overflowX: 'auto' }}>
+                            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                              <thead>
+                                <tr>
+                                  <th style={thStyle}>Typ zadania</th>
+                                  <th style={thStyle}>Nazwa</th>
+                                  <th style={thStyle}>Data</th>
+                                  <th style={thStyle}>Klient</th>
+                                  <th style={thStyle}>Status</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {employeeDoneTasks.map((task) => {
+                                  const cleanName = (task.itemName || '').replace(/^Usługa:\s*/i, '')
+                                  const statusCfg = getStatusConfig(task.status, task.taskKind === 'SERVICE' || task.taskKind === 'CONSULTATION')
 
-                            return (
-                              <div
-                                key={task.taskUniqueId}
-                                style={{
-                                  padding: '0.85rem 1rem',
-                                  borderRadius: '4px',
-                                  border: `1px solid ${THEME.borderDefault}`,
-                                  backgroundColor: THEME.bgSoft,
-                                  display: 'flex',
-                                  justifyContent: 'space-between',
-                                  alignItems: 'center',
-                                  flexWrap: 'wrap',
-                                  gap: '1rem',
-                                  opacity: task.isDone ? 0.65 : 1
-                                }}
-                              >
-                                <div style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
-                                  <div style={{ fontSize: '0.95rem', fontWeight: 700, textDecoration: task.isDone ? 'line-through' : 'none' }}>
-                                    {task.taskTypeLabel}: {cleanName}
-                                  </div>
-
-                                  <div style={{ fontSize: '0.82rem', color: THEME.textMuted }}>
-                                    Klient: {task.clientName || 'Gość'} (tel. {task.clientPhone || '-'}) | {task.deliveryAddress || getDeliveryLabel(task, service)}
-                                  </div>
-                                </div>
-
-                                <label style={{
-                                  display: 'flex',
-                                  alignItems: 'center',
-                                  gap: '8px',
-                                  fontSize: '0.85rem',
-                                  fontWeight: 600,
-                                  color: THEME.textDark,
-                                  cursor: 'pointer',
-                                  userSelect: 'none'
-                                }}>
-                                  <input
-                                    type="checkbox"
-                                    checked={task.isDone}
-                                    onChange={(e) => handleToggleTaskCheckbox(task, e.target.checked)}
-                                    style={{ width: '17px', height: '17px', cursor: 'pointer', accentColor: THEME.primary }}
-                                  />
-                                  {task.isDone ? 'Zakończono' : 'Oznacz jako wykonane'}
-                                </label>
-                              </div>
-                            )
-                          })}
-                        </div>
+                                  return (
+                                    <tr key={task.rowKey}>
+                                      <td style={tdStyle}>{task.taskLabel}</td>
+                                      <td style={{ ...tdStyle, fontWeight: 700 }}>{cleanName}</td>
+                                      <td style={{ ...tdStyle, fontSize: '0.8rem', color: THEME.textMuted }}>{task.displayDate}</td>
+                                      <td style={{ ...tdStyle, fontSize: '0.8rem' }}>{task.clientName}</td>
+                                      <td style={tdStyle}>
+                                        <span style={{
+                                          padding: '2px 8px',
+                                          borderRadius: '4px',
+                                          fontSize: '0.74rem',
+                                          fontWeight: 700,
+                                          backgroundColor: statusCfg.bg,
+                                          color: statusCfg.color,
+                                          border: `1px solid ${statusCfg.border}`
+                                        }}>
+                                          {task.isCancelled ? 'Anulowane' : 'Zakończone'}
+                                        </span>
+                                      </td>
+                                    </tr>
+                                  )
+                                })}
+                              </tbody>
+                            </table>
+                          </div>
+                        )
                       )}
                     </div>
                   </div>
                 )}
+              </div>
+            )}
 
-                {/* WIDOK BIEŻĄCYCH I ZAKOŃCZONYCH ZAMÓWIEŃ DLA KLIENTA (CLIENT) */}
-                {!resLoading && !isEmployee && (
-                  <>
-                    <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1.25rem', flexWrap: 'wrap' }}>
-                      {[
-                        { id: 'ALL', label: 'Wszystkie' },
-                        { id: 'EQUIPMENT', label: 'Sprzęt' },
-                        { id: 'SERVICE', label: 'Usługi' }
-                      ].map((cat) => (
-                        <button
-                          key={cat.id}
-                          onClick={() => setReservationCategory(cat.id)}
-                          style={{
-                            padding: '6px 14px',
-                            borderRadius: '4px',
-                            border: `1px solid ${reservationCategory === cat.id ? THEME.primary : THEME.borderDefault}`,
-                            fontSize: '0.8rem',
-                            fontWeight: 600,
-                            cursor: 'pointer',
-                            backgroundColor: reservationCategory === cat.id ? THEME.primary : THEME.bgSoft,
-                            color: reservationCategory === cat.id ? THEME.white : THEME.textDark
-                          }}
-                        >
-                          {cat.label}
-                        </button>
-                      ))}
+            {/* ZAKŁADKA REZERWACJI DLA KLIENTA (CLIENT) */}
+            {activeTab === 'RESERVATIONS' && !isEmployee && (
+              <div>
+                <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1.25rem', flexWrap: 'wrap' }}>
+                  {[
+                    { id: 'ALL', label: 'Wszystkie' },
+                    { id: 'EQUIPMENT', label: 'Sprzęt' },
+                    { id: 'SERVICE', label: 'Usługi' }
+                  ].map((cat) => (
+                    <button
+                      key={cat.id}
+                      onClick={() => setReservationCategory(cat.id)}
+                      style={{
+                        padding: '6px 14px',
+                        borderRadius: '4px',
+                        border: `1px solid ${reservationCategory === cat.id ? THEME.primary : THEME.borderDefault}`,
+                        fontSize: '0.8rem',
+                        fontWeight: 600,
+                        cursor: 'pointer',
+                        backgroundColor: reservationCategory === cat.id ? THEME.primary : THEME.bgSoft,
+                        color: reservationCategory === cat.id ? THEME.white : THEME.textDark
+                      }}
+                    >
+                      {cat.label}
+                    </button>
+                  ))}
+                </div>
+
+                {resLoading && <p style={{ color: THEME.textMuted, fontSize: '0.85rem' }}>Ładowanie rezerwacji...</p>}
+
+                {!resLoading && filteredClientReservations.length === 0 && (
+                  <p style={{ color: THEME.textMuted, fontSize: '0.85rem', margin: '2rem 0' }}>
+                    Brak zamówień w wybranej kategorii.
+                  </p>
+                )}
+
+                {!resLoading && filteredClientReservations.length > 0 && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+                    <div style={{ border: `1px solid ${THEME.borderDefault}`, borderRadius: '4px', overflow: 'hidden' }}>
+                      <button
+                        type="button"
+                        onClick={() => setOpenCurrentSection(!openCurrentSection)}
+                        style={{
+                          width: '100%',
+                          padding: '12px 16px',
+                          backgroundColor: THEME.bgSoft,
+                          border: 'none',
+                          borderBottom: openCurrentSection ? `1px solid ${THEME.borderDivider}` : 'none',
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          alignItems: 'center',
+                          cursor: 'pointer',
+                          color: THEME.textDark,
+                          fontWeight: 700,
+                          fontSize: '0.9rem'
+                        }}
+                      >
+                        <span>Bieżące i nadchodzące ({activeReservations.length})</span>
+                        {openCurrentSection ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
+                      </button>
+
+                      {openCurrentSection && (
+                        activeReservations.length === 0 ? (
+                          <div style={{ padding: '1rem', fontSize: '0.84rem', color: THEME.textMuted }}>
+                            Brak bieżących rezerwacji.
+                          </div>
+                        ) : (
+                          <ReservationResponsiveView
+                            items={activeReservations}
+                            showPayment={true}
+                            showRebook={false}
+                            onRebook={handleRebook}
+                          />
+                        )
+                      )}
                     </div>
 
-                    {filteredClientReservations.length === 0 && (
-                      <p style={{ color: THEME.textMuted, fontSize: '0.85rem', margin: '2rem 0' }}>
-                        Brak zamówień w wybranej kategorii.
-                      </p>
-                    )}
+                    <div style={{ border: `1px solid ${THEME.borderDefault}`, borderRadius: '4px', overflow: 'hidden' }}>
+                      <button
+                        type="button"
+                        onClick={() => setOpenHistorySection(!openHistorySection)}
+                        style={{
+                          width: '100%',
+                          padding: '12px 16px',
+                          backgroundColor: THEME.bgSoft,
+                          border: 'none',
+                          borderBottom: openHistorySection ? `1px solid ${THEME.borderDivider}` : 'none',
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          alignItems: 'center',
+                          cursor: 'pointer',
+                          color: THEME.textDark,
+                          fontWeight: 700,
+                          fontSize: '0.9rem'
+                        }}
+                      >
+                        <span>Zakończone ({historyReservations.length})</span>
+                        {openHistorySection ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
+                      </button>
 
-                    {filteredClientReservations.length > 0 && (
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
-                        <div style={{ border: `1px solid ${THEME.borderDefault}`, borderRadius: '4px', overflow: 'hidden' }}>
-                          <button
-                            type="button"
-                            onClick={() => setOpenCurrentSection(!openCurrentSection)}
-                            style={{
-                              width: '100%',
-                              padding: '12px 16px',
-                              backgroundColor: THEME.bgSoft,
-                              border: 'none',
-                              borderBottom: openCurrentSection ? `1px solid ${THEME.borderDivider}` : 'none',
-                              display: 'flex',
-                              justifyContent: 'space-between',
-                              alignItems: 'center',
-                              cursor: 'pointer',
-                              color: THEME.textDark,
-                              fontWeight: 700,
-                              fontSize: '0.9rem'
-                            }}
-                          >
-                            <span>Bieżące i nadchodzące ({activeReservations.length})</span>
-                            {openCurrentSection ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
-                          </button>
-
-                          {openCurrentSection && (
-                            activeReservations.length === 0 ? (
-                              <div style={{ padding: '1rem', fontSize: '0.84rem', color: THEME.textMuted }}>
-                                Brak bieżących rezerwacji.
-                              </div>
-                            ) : (
-                              <ReservationResponsiveView
-                                items={activeReservations}
-                                showPayment={true}
-                                showRebook={false}
-                                onRebook={handleRebook}
-                              />
-                            )
-                          )}
-                        </div>
-
-                        <div style={{ border: `1px solid ${THEME.borderDefault}`, borderRadius: '4px', overflow: 'hidden' }}>
-                          <button
-                            type="button"
-                            onClick={() => setOpenHistorySection(!openHistorySection)}
-                            style={{
-                              width: '100%',
-                              padding: '12px 16px',
-                              backgroundColor: THEME.bgSoft,
-                              border: 'none',
-                              borderBottom: openHistorySection ? `1px solid ${THEME.borderDivider}` : 'none',
-                              display: 'flex',
-                              justifyContent: 'space-between',
-                              alignItems: 'center',
-                              cursor: 'pointer',
-                              color: THEME.textDark,
-                              fontWeight: 700,
-                              fontSize: '0.9rem'
-                            }}
-                          >
-                            <span>Zakończone ({historyReservations.length})</span>
-                            {openHistorySection ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
-                          </button>
-
-                          {openHistorySection && (
-                            historyReservations.length === 0 ? (
-                              <div style={{ padding: '1rem', fontSize: '0.84rem', color: THEME.textMuted }}>
-                                Brak zakończonych zamówień.
-                              </div>
-                            ) : (
-                              <ReservationResponsiveView
-                                items={historyReservations}
-                                showPayment={false}
-                                showRebook={true}
-                                onRebook={handleRebook}
-                              />
-                            )
-                          )}
-                        </div>
-                      </div>
-                    )}
-                  </>
+                      {openHistorySection && (
+                        historyReservations.length === 0 ? (
+                          <div style={{ padding: '1rem', fontSize: '0.84rem', color: THEME.textMuted }}>
+                            Brak zakończonych zamówień.
+                          </div>
+                        ) : (
+                          <ReservationResponsiveView
+                            items={historyReservations}
+                            showPayment={false}
+                            showRebook={true}
+                            onRebook={handleRebook}
+                          />
+                        )
+                      )}
+                    </div>
+                  </div>
                 )}
               </div>
             )}
           </div>
         </div>
       </main>
+
+      {/* Minimalistyczne okno potwierdzenia zakończenia lub anulowania zadania */}
+      {confirmAction && (
+        <div
+          onClick={() => setConfirmAction(null)}
+          style={{
+            position: 'fixed',
+            inset: 0,
+            backgroundColor: 'rgba(15, 23, 42, 0.45)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '1rem',
+            zIndex: 200
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              backgroundColor: THEME.white,
+              border: `1px solid ${THEME.borderDefault}`,
+              borderRadius: '4px',
+              padding: '1.5rem',
+              width: '100%',
+              maxWidth: '420px'
+            }}
+          >
+            <h4 style={{ margin: '0 0 0.6rem 0', fontSize: '1.05rem', fontWeight: 800, color: THEME.textDark }}>
+              {confirmAction.title}
+            </h4>
+            <p style={{ margin: '0 0 1.25rem 0', fontSize: '0.88rem', lineHeight: 1.5, color: THEME.textMuted }}>
+              {confirmAction.message}
+            </p>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
+              <button
+                type="button"
+                onClick={() => setConfirmAction(null)}
+                style={{
+                  padding: '8px 14px',
+                  borderRadius: '4px',
+                  border: `1px solid ${THEME.borderDefault}`,
+                  backgroundColor: THEME.white,
+                  color: THEME.textDark,
+                  fontSize: '0.84rem',
+                  fontWeight: 600,
+                  cursor: 'pointer'
+                }}
+              >
+                Wróć
+              </button>
+              <button
+                type="button"
+                onClick={async () => {
+                  await handleEmployeeStatusUpdate(confirmAction.resId, confirmAction.nextStatus)
+                  setConfirmAction(null)
+                }}
+                style={{
+                  padding: '8px 16px',
+                  borderRadius: '4px',
+                  border: `1px solid ${confirmAction.nextStatus === 'CANCELLED' ? '#b91c1c' : THEME.primary}`,
+                  backgroundColor: confirmAction.nextStatus === 'CANCELLED' ? '#b91c1c' : THEME.primary,
+                  color: THEME.white,
+                  fontSize: '0.84rem',
+                  fontWeight: 700,
+                  cursor: 'pointer'
+                }}
+              >
+                {confirmAction.nextStatus === 'CANCELLED' ? 'Tak, anuluj' : 'Tak, zakończ'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
@@ -1251,6 +1372,7 @@ function ReservationResponsiveView({ items, showPayment, showRebook, onRebook })
           <tbody>
             {items.map((r) => {
               const isService = isServiceReservation(r)
+              const isConsult = isConsultationRecord(r)
               const statusCfg = getStatusConfig(r.status, isService)
               const StatusIcon = statusCfg.Icon
               const rawName = r.itemName || `Zamówienie #${r.id || r.reservationId}`
@@ -1273,18 +1395,18 @@ function ReservationResponsiveView({ items, showPayment, showRebook, onRebook })
                       whiteSpace: 'nowrap'
                     }}>
                       {isService ? <Sprout size={12} /> : <Wrench size={12} />}
-                      {isService ? 'Usługa' : 'Sprzęt'}
+                      {isConsult ? 'Konsultacja' : isService ? 'Usługa' : 'Sprzęt'}
                     </span>
                   </td>
 
                   <td style={{ ...tdStyle, fontWeight: 700 }}>{cleanName}</td>
 
                   <td style={{ ...tdStyle, color: THEME.textMuted, fontSize: '0.78rem', whiteSpace: 'nowrap' }}>
-                    {formatDateShort(r.startDate || r.startTime)} — {formatDateShort(r.endDate || r.endTime)}
+                    {isService ? formatDateShort(r.startDate) : `${formatDateShort(r.startDate)} — ${formatDateShort(r.endDate)}`}
                   </td>
 
                   <td style={{ ...tdStyle, fontWeight: 700, whiteSpace: 'nowrap' }}>
-                    {r.totalPrice} zł
+                    {isConsult ? 'Wycena po rozmowie' : `${r.totalPrice} zł`}
                   </td>
 
                   <td style={{ ...tdStyle, fontSize: '0.8rem' }}>
@@ -1293,7 +1415,7 @@ function ReservationResponsiveView({ items, showPayment, showRebook, onRebook })
 
                   {showPayment && (
                     <td style={{ ...tdStyle, fontSize: '0.8rem' }}>
-                      {getPaymentLabel(r)}
+                      {isConsult ? '-' : getPaymentLabel(r)}
                     </td>
                   )}
 
@@ -1370,31 +1492,10 @@ function ReservationResponsiveView({ items, showPayment, showRebook, onRebook })
               }}
             >
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <span style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: '5px',
-                  padding: '2px 7px',
-                  borderRadius: '4px',
-                  fontSize: '0.7rem',
-                  fontWeight: 600,
-                  backgroundColor: THEME.white,
-                  border: `1px solid ${THEME.borderDefault}`
-                }}>
+                <span style={{ padding: '2px 7px', borderRadius: '4px', fontSize: '0.7rem', fontWeight: 600, backgroundColor: THEME.white, border: `1px solid ${THEME.borderDefault}` }}>
                   {isService ? 'Usługa' : 'Sprzęt'}
                 </span>
-                <span style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: '4px',
-                  padding: '2px 7px',
-                  borderRadius: '4px',
-                  fontSize: '0.72rem',
-                  fontWeight: 700,
-                  backgroundColor: statusCfg.bg,
-                  color: statusCfg.color,
-                  border: `1px solid ${statusCfg.border}`
-                }}>
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '2px 7px', borderRadius: '4px', fontSize: '0.72rem', fontWeight: 700, backgroundColor: statusCfg.bg, color: statusCfg.color, border: `1px solid ${statusCfg.border}` }}>
                   <StatusIcon size={12} />
                   {statusCfg.label}
                 </span>
@@ -1402,22 +1503,12 @@ function ReservationResponsiveView({ items, showPayment, showRebook, onRebook })
 
               <div style={{ fontWeight: 700, fontSize: '0.92rem' }}>{cleanName}</div>
               <div style={{ fontSize: '0.78rem', color: THEME.textMuted }}>
-                {formatDateShort(r.startDate || r.startTime)} — {formatDateShort(r.endDate || r.endTime)} | <strong>{r.totalPrice} zł</strong>
+                {formatDateShort(r.startDate)} | <strong>{r.totalPrice} zł</strong>
               </div>
               {showRebook && r.itemId && (
                 <button
                   onClick={() => onRebook(r)}
-                  style={{
-                    alignSelf: 'flex-end',
-                    padding: '5px 10px',
-                    borderRadius: '4px',
-                    border: `1px solid ${THEME.primary}`,
-                    backgroundColor: THEME.primary,
-                    color: THEME.white,
-                    fontSize: '0.75rem',
-                    fontWeight: 600,
-                    cursor: 'pointer'
-                  }}
+                  style={{ alignSelf: 'flex-end', padding: '5px 10px', borderRadius: '4px', border: `1px solid ${THEME.primary}`, backgroundColor: THEME.primary, color: THEME.white, fontSize: '0.75rem', fontWeight: 600, cursor: 'pointer' }}
                 >
                   Ponów
                 </button>

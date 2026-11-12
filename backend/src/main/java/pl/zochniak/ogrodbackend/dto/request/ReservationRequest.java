@@ -1,7 +1,12 @@
 package pl.zochniak.ogrodbackend.dto.request;
+
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Data;
+import lombok.NoArgsConstructor;
 import pl.zochniak.ogrodbackend.entity.enums.DeliveryType;
 import pl.zochniak.ogrodbackend.entity.enums.PaymentType;
-import lombok.*;
+
 import java.time.LocalDateTime;
 
 @Data
@@ -10,28 +15,25 @@ import java.time.LocalDateTime;
 @AllArgsConstructor
 public class ReservationRequest {
 
+    private Long userId;
     private Long itemId;
     private LocalDateTime startDate;
     private LocalDateTime endDate;
 
-    //id użytkownika (null jeśli rezerwacja -> GUEST)
-    private Long userId;
-
-    // Dane dla guest(wymagane, gdy userId == null)
     private String guestName;
     private String guestEmail;
     private String guestPhone;
 
-    // Konfig dostawy
     private DeliveryType deliveryType;
     private String street;
     private String city;
     private String postalCode;
 
-    //sposób płatności
     private PaymentType paymentType;
+    private PaymentType paymentMethod;
+    private String customerNotes;
 
     public PaymentType getPaymentType() {
-        throw new UnsupportedOperationException("Unimplemented method 'getPaymentType'");
+        return this.paymentType != null ? this.paymentType : this.paymentMethod;
     }
 }

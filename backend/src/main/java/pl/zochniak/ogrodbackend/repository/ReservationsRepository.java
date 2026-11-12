@@ -19,8 +19,7 @@ public interface ReservationsRepository extends JpaRepository<Reservations, Long
 
     @Query("SELECT r FROM Reservations r " +
            "WHERE r.assignedEmployee.id = :employeeId " +
-           "AND r.status <> pl.zochniak.ogrodbackend.entity.enums.ReservationStatus.CANCELLED " +
-           "ORDER BY r.startTime ASC")
+           "ORDER BY r.startTime DESC")
     List<Reservations> findScheduleForEmployee(@Param("employeeId") Long employeeId);
 
     @Query("SELECT r FROM Reservations r " +
