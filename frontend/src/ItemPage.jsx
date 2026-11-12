@@ -23,7 +23,7 @@ const MONTH_NAMES = [
 ]
 const DAY_NAMES = ['Pon', 'Wt', 'Śr', 'Czw', 'Pt', 'Sob', 'Ndz']
 
-export default function ItemPage({ currentUser }) {
+export default function ItemPage({ currentUser, onAddToCart, cartCount = 0 }) {
   const { id } = useParams()
   const navigate = useNavigate()
 
@@ -740,26 +740,47 @@ export default function ItemPage({ currentUser }) {
                   <button
                     type="button"
                     disabled={!startDate || rangeConflict}
-                    onClick={() => setCartNotice('Funkcja koszyka zostanie wkrótce uruchomiona. Kliknij „Kup”, aby sfinalizować rezerwację.')}
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '6px',
-                      padding: '9px 18px',
-                      borderRadius: '4px',
-                      border: `1px solid ${THEME.borderDefault}`,
-                      backgroundColor: THEME.white,
-                      color: !startDate || rangeConflict ? '#94a3b8' : THEME.textDark,
-                      fontSize: '0.88rem',
-                      fontWeight: 600,
-                      cursor: !startDate || rangeConflict ? 'not-allowed' : 'pointer'
+                    onClick={() => {
+                      if (!startDate || rangeConflict || !priceSummary) return
+                      if (onAddToCart) {
+                        onAddToCart({
+                          itemId: item.id,
+                          name: cleanItemName,
+                          brand: item.brand,
+                          imageUrl: item.imageUrl,
+                          startDate,
+                          endDate: endDate || startDate,
+                          daysCount: priceSummary.daysCount,
+                          baseCost: priceSummary.baseCost
+                        })
+                      }
+                      setCartNotice('Dodano pozycję do koszyka! Możesz przejść do koszyka lub kontynuować zakupy.')
                     }}
+                    
                   >
                     <ShoppingBag size={15} />
                     Dodaj do koszyka
                   </button>
                 )}
-
+                <button
+                  onClick={() => navigate('/cart')}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    color: THEME.textDark,
+                    fontWeight: 600,
+                    fontSize: '0.85rem',
+                    padding: '7px 12px',
+                    borderRadius: '4px',
+                    border: `1px solid ${THEME.borderDefault}`,
+                    backgroundColor: THEME.white,
+                    cursor: 'pointer'
+                  }}
+                >
+                  <ShoppingBag size={16} />
+                  Koszyk ({cartCount})
+                </button>
                 <button
                   type="button"
                   disabled={!startDate || rangeConflict}

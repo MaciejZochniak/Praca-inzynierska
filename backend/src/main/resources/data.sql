@@ -33,7 +33,7 @@ INSERT INTO users (id, email, password_hash, first_name, last_name, phone_number
 VALUES (
   1, 
   'jan.kowalski@example.com', 
-  '$2a$10$dXJ3SW6G7P50lGmMkkmwe.20cQQubK3.HZWzG3YB1tlRy.fqvM/BG', 
+  'tajnehaslo123', 
   'Jan', 
   'Kowalski', 
   '600700800', 

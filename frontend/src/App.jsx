@@ -1,9 +1,8 @@
 import { useEffect, useState, useMemo, useRef } from 'react'
-import { Routes, Route, useNavigate, Link } from 'react-router-dom'
+import { Routes, Route, useNavigate } from 'react-router-dom'
 import { 
   Phone, 
-  MessageSquare, 
-  Bell, 
+  ShoppingCart, 
   CalendarCheck, 
   User, 
   LogOut, 
@@ -15,6 +14,7 @@ import logoImage from './assets/GardenBookingLogo.png'
 import AuthPage from './AuthPage'
 import UserPage from './UserPage'
 import ItemPage from './ItemPage'
+import CartPage from './CartPage'
 
 const THEME = {
   primary: '#556B2F',
@@ -45,7 +45,7 @@ function isServiceItem(item) {
   )
 }
 
-function HomeCatalog({ currentUser, hasActiveReservations, handleLogout }) {
+function HomeCatalog({ currentUser, hasActiveReservations, handleLogout, cartCount }) {
   const navigate = useNavigate()
   const [items, setItems] = useState([])
   const [loading, setLoading] = useState(true)
@@ -215,32 +215,41 @@ function HomeCatalog({ currentUser, hasActiveReservations, handleLogout }) {
             <Phone size={18} />
           </button>
 
+          <button
+            type="button"
+            title="Koszyk"
+            aria-label="Koszyk"
+            onClick={() => navigate('/cart')}
+            style={navIconBtnStyle}
+            onMouseEnter={(e) => { e.currentTarget.style.borderColor = THEME.borderHover }}
+            onMouseLeave={(e) => { e.currentTarget.style.borderColor = THEME.borderDefault }}
+          >
+            <ShoppingCart size={18} />
+            {cartCount > 0 && (
+              <span style={{
+                position: 'absolute',
+                top: '-6px',
+                right: '-6px',
+                minWidth: '18px',
+                height: '18px',
+                padding: '0 4px',
+                backgroundColor: THEME.primary,
+                color: THEME.white,
+                fontSize: '0.68rem',
+                fontWeight: 800,
+                borderRadius: '999px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                border: '2px solid #ffffff'
+              }}>
+                {cartCount}
+              </span>
+            )}
+          </button>
+
           {currentUser ? (
             <>
-              <button
-                type="button"
-                title="Wiadomości (Czat)"
-                aria-label="Wiadomości (Czat)"
-                onClick={() => alert('Moduł czatu z obsługą będzie dostępny wkrótce.')}
-                style={navIconBtnStyle}
-                onMouseEnter={(e) => { e.currentTarget.style.borderColor = THEME.borderHover }}
-                onMouseLeave={(e) => { e.currentTarget.style.borderColor = THEME.borderDefault }}
-              >
-                <MessageSquare size={18} />
-              </button>
-
-              <button
-                type="button"
-                title="Powiadomienia"
-                aria-label="Powiadomienia"
-                onClick={() => alert('Brak nowych powiadomień.')}
-                style={navIconBtnStyle}
-                onMouseEnter={(e) => { e.currentTarget.style.borderColor = THEME.borderHover }}
-                onMouseLeave={(e) => { e.currentTarget.style.borderColor = THEME.borderDefault }}
-              >
-                <Bell size={18} />
-              </button>
-
               <button
                 type="button"
                 title="Bieżące rezerwacje i historia"
@@ -640,13 +649,13 @@ function HomeCatalog({ currentUser, hasActiveReservations, handleLogout }) {
                           position: 'absolute',
                           top: '10px',
                           right: '10px',
-                          backgroundColor: '#dcfce7',
-                          color: '#14532d',
-                          border: '1px solid #86efac',
+                          backgroundColor: THEME.white,
+                          color: THEME.textDark,
+                          border: `1px solid ${THEME.borderDefault}`,
                           padding: '3px 8px',
                           borderRadius: '4px',
                           fontSize: '0.72rem',
-                          fontWeight: 800
+                          fontWeight: 700
                         }}>
                           {item.brand}
                         </span>
@@ -705,7 +714,7 @@ function HomeCatalog({ currentUser, hasActiveReservations, handleLogout }) {
                         cursor: 'pointer'
                       }}
                     >
-                      Szczegóły i kalendarz →
+                      Szczegóły →
                     </button>
                   </div>
                 </div>
@@ -767,7 +776,29 @@ export default function App() {
     const saved = localStorage.getItem('garden_user')
     return saved ? JSON.parse(saved) : null
   })
+  const cartStorageKey = useMemo(() => {
+    const uid = currentUser?.userId || currentUser?.id
+    return uid ? `garden_cart_${uid}` : 'garden_cart_guest'
+  }, [currentUser])
+
+  const [cartItems, setCartItems] = useState(() => {
+    const savedUser = localStorage.getItem('garden_user')
+    const parsedUser = savedUser ? JSON.parse(savedUser) : null
+    const uid = parsedUser?.userId || parsedUser?.id
+    const initialKey = uid ? `garden_cart_${uid}` : 'garden_cart_guest'
+    const savedCart = localStorage.getItem(initialKey)
+    return savedCart ? JSON.parse(savedCart) : []
+  })
   const [hasActiveReservations, setHasActiveReservations] = useState(false)
+
+  useEffect(() => {
+    const savedCart = localStorage.getItem(cartStorageKey)
+    setCartItems(savedCart ? JSON.parse(savedCart) : [])
+  }, [cartStorageKey])
+
+  useEffect(() => {
+    localStorage.setItem(cartStorageKey, JSON.stringify(cartItems))
+  }, [cartItems, cartStorageKey])
 
   useEffect(() => {
     const uid = currentUser?.userId || currentUser?.id
@@ -798,7 +829,21 @@ export default function App() {
     setCurrentUser(null)
     setHasActiveReservations(false)
     localStorage.removeItem('garden_user')
+    const guestCart = localStorage.getItem('garden_cart_guest')
+    setCartItems(guestCart ? JSON.parse(guestCart) : [])
     navigate('/')
+  }
+
+  const handleAddToCart = (newEntry) => {
+    setCartItems((prev) => [...prev, { ...newEntry, cartEntryId: `${Date.now()}-${Math.random()}` }])
+  }
+
+  const handleRemoveFromCart = (cartEntryId) => {
+    setCartItems((prev) => prev.filter((item) => item.cartEntryId !== cartEntryId))
+  }
+
+  const handleClearCart = () => {
+    setCartItems([])
   }
 
   return (
@@ -810,12 +855,30 @@ export default function App() {
             currentUser={currentUser}
             hasActiveReservations={hasActiveReservations}
             handleLogout={handleLogout}
+            cartCount={cartItems.length}
           />
         }
       />
       <Route
         path="/item/:id"
-        element={<ItemPage currentUser={currentUser} />}
+        element={
+          <ItemPage
+            currentUser={currentUser}
+            onAddToCart={handleAddToCart}
+            cartCount={cartItems.length}
+          />
+        }
+      />
+      <Route
+        path="/cart"
+        element={
+          <CartPage
+            currentUser={currentUser}
+            cartItems={cartItems}
+            onRemoveFromCart={handleRemoveFromCart}
+            onClearCart={handleClearCart}
+          />
+        }
       />
       <Route
         path="/auth"
