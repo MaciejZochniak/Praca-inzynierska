@@ -21,58 +21,37 @@ VALUES
   (7, 3, 'STIHL', 'Nożyce spalinowe do żywopłotu HS 45', 'Dwustronna listwa tnąca 60 cm. Precyzyjne cięcie i formowanie krzewów ozdobnych oraz gęstych żywopłotów.', 75.00, 2, true, '/images/kosiarka.jpg', NOW()),
   (8, 4, 'Kärcher', 'Myjka ciśnieniowa K7 Professional', 'Ciśnienie 180 bar, wąż wysokociśnieniowy 10 m, bęben na wąż oraz przystawka T-Racer do bezrozbryzgowego mycia kostki brukowej i tarasów.', 95.00, 2, true, '/images/kosiarka.jpg', NOW()),
   (9, 4, 'Lumag', 'Rębak do gałęzi spalinowy RAMBO HC15', 'Rozdrabniacz spalinowy rębający gałęzie o średnicy do 100 mm. Uzyskane zrębki idealnie nadają się do ściółkowania rabat ogrodowych.', 160.00, 1, true, '/images/kosiarka.jpg', NOW()),
-  (10, 10, NULL, 'Usługa: Kompleksowe koszenie trawnika', 'Koszenie kosiarką z koszem lub traktorkiem, docinanie krawędzi podkaszarką oraz wywóz skoszonej biomasy. Cena obejmuje roboczodzień ekipy (do 1500 m²).', 350.00, 2, true, '/images/kosiarka.jpg', NOW()),
-  (11, 10, NULL, 'Usługa: Wertykulacja i aeracja trawnika', 'Nacinanie darni na krzyż, wygrabienie filcu, napowietrzanie rurkowe, piaskowanie oraz dosiew nasion regeneracyjnych trawy z nawożeniem.', 420.00, 1, true, '/images/kosiarka.jpg', NOW()),
+  (10, 10, NULL, 'Usługa: Kompleksowe koszenie trawnika', 'Koszenie kosiarką z koszem lub traktorkiem, docinanie krawędzi podkaszarką oraz wywóz skoszonej biomasy. Cena obejmuje roboczodzień ekipy (do 500 m²).', 350.00, 2, true, '/images/kosiarka.jpg', NOW()),
+  (11, 10, NULL, 'Usługa: Wertykulacja i aeracja trawnika', 'Nacinanie darni na krzyż, wygrabienie filcu, napowietrzanie rurkowe, piaskowanie oraz dosiew nasion regeneracyjnych trawy z nawożeniem.', 420.00, 2, true, '/images/kosiarka.jpg', NOW()),
   (12, 11, NULL, 'Usługa: Cięcie żywopłotów i formowanie krzewów', 'Precyzyjne przycinanie żywopłotów liściastych i iglastych na zadaną wysokość wraz z uprzątnięciem i rozdrobnieniem gałęzi.', 300.00, 2, true, '/images/kosiarka.jpg', NOW()),
-  (13, 11, NULL, 'Usługa: Wycinka i cięcie pielęgnacyjne drzew', 'Wycinka sekcyjna metodą alpinistyczną lub z podnośnika koszowego, usuwanie posuszu i gałęzi kolidujących z budynkami.', 600.00, 1, true, '/images/kosiarka.jpg', NOW()),
-  (14, 12, NULL, 'Usługa: Zakładanie trawnika z siewu / rolki', 'Glebogryzowanie gruntu, usunięcie kamieni i chwastów, niwelacja terenu łatą, montaż siatki przeciw kretom i wysiew nasion.', 800.00, 1, true, '/images/kosiarka.jpg', NOW()),
-  (15, 13, NULL, 'Usługa: Karczowanie i czyszczenie działki', 'Usuwanie samosiejek, gęstych zarośli, frezowanie pni po wycince oraz mulczowanie terenu kosiarką bijakową.', 950.00, 1, true, '/images/kosiarka.jpg', NOW())
+  (13, 11, NULL, 'Usługa: Wycinka i cięcie pielęgnacyjne drzew', 'Wycinka sekcyjna metodą alpinistyczną lub z podnośnika koszowego, usuwanie posuszu i gałęzi kolidujących z budynkami.', 600.00, 2, true, '/images/kosiarka.jpg', NOW()),
+  (14, 12, NULL, 'Usługa: Zakładanie trawnika z siewu / rolki', 'Glebogryzowanie gruntu, usunięcie kamieni i chwastów, niwelacja terenu łatą, montaż siatki przeciw kretom i wysiew nasion.', 800.00, 2, true, '/images/kosiarka.jpg', NOW()),
+  (15, 13, NULL, 'Usługa: Karczowanie i czyszczenie działki', 'Usuwanie samosiejek, gęstych zarośli, frezowanie pni po wycince oraz mulczowanie terenu kosiarką bijakową.', 950.00, 2, true, '/images/kosiarka.jpg', NOW())
 ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO users (id, email, password_hash, first_name, last_name, phone_number, role, created_at)
 VALUES 
-  (
-    1, 
-    'jan.kowalski@example.com', 
-    'tajnehaslo123', 
-    'Jan', 
-    'Kowalski', 
-    '600700800', 
-    'CLIENT', 
-    NOW()
-  ),
-  (
-    2, 
-    'karolina.pracownik@example.com', 
-    'tajnehaslo123', 
-    'Karolina', 
-    'Pracowniczka', 
-    '500400300', 
-    'EMPLOYEE', 
-    NOW()
-  ),
-  (
-    3, 
-    'szef@example.com', 
-    'tajnehaslo123', 
-    'Karolina', 
-    'Szefowa', 
-    '123123123', 
-    'ADMIN', 
-    NOW()
-  )
+  (1, 'jan.kowalski@example.com', 'tajnehaslo123', 'Jan', 'Kowalski', '600700800', 'CLIENT', NOW()),
+  (2, 'karolina.pracownik@example.com', 'tajnehaslo123', 'Karolina', 'Pracowniczka', '500400300', 'EMPLOYEE', NOW()),
+  (3, 'marek.uslugi@example.com', 'tajnehaslo123', 'Marek', 'Ogrodnik', '500400301', 'EMPLOYEE', NOW()),
+  (4, 'piotr.sprzet@example.com', 'tajnehaslo123', 'Piotr', 'Magazynier', '500400302', 'EMPLOYEE', NOW())
 ON CONFLICT (id) DO NOTHING;
 
-INSERT INTO reservations (id, user_id, item_id, start_time, end_time, total_price, status, created_at)
+INSERT INTO reservations (id, user_id, assigned_employee_id, item_id, start_time, end_time, total_price, status, created_at)
 VALUES 
-  (101, 1, 1, '2026-10-01 09:00:00', '2026-10-03 18:00:00', 180.00, 'COMPLETED', '2026-09-28 14:00:00'),
-  (102, 1, 10, '2026-10-12 08:00:00', '2026-10-12 16:00:00', 350.00, 'COMPLETED', '2026-10-08 11:30:00'),
-  (103, 1, 4, '2026-10-20 10:00:00', '2026-10-22 18:00:00', 280.00, 'CANCELLED', '2026-10-18 16:15:00'),
-  (106, 1, 1, '2026-11-14 08:00:00', '2026-11-17 18:00:00', 270.00, 'CONFIRMED', NOW()),
-  (107, 1, 1, '2026-11-15 08:00:00', '2026-11-16 18:00:00', 180.00, 'CONFIRMED', NOW()),
-  (108, 1, 2, '2026-11-18 09:00:00', '2026-11-21 18:00:00', 330.00, 'CONFIRMED', NOW()),
-  (104, 1, 5, '2026-11-20 09:00:00', '2026-11-23 17:00:00', 360.00, 'CONFIRMED', NOW()),
-  (109, 1, 10, '2026-11-19 08:00:00', '2026-11-20 16:00:00', 700.00, 'CONFIRMED', NOW()),
-  (110, 1, 10, '2026-11-19 08:00:00', '2026-11-20 16:00:00', 700.00, 'PENDING', NOW()),
-  (105, 1, 12, '2026-11-28 08:00:00', '2026-11-28 16:00:00', 300.00, 'PENDING', NOW())
+  (101, 1, 4, 1, '2026-10-01 09:00:00', '2026-10-03 18:00:00', 180.00, 'COMPLETED', '2026-09-28 14:00:00'),
+  (102, 1, 2, 10, '2026-10-12 08:00:00', '2026-10-12 16:00:00', 350.00, 'COMPLETED', '2026-10-08 11:30:00'),
+  (103, 1, 4, 4, '2026-10-20 10:00:00', '2026-10-22 18:00:00', 280.00, 'CANCELLED', '2026-10-18 16:15:00'),
+  (106, 1, 4, 1, '2026-11-14 08:00:00', '2026-11-17 18:00:00', 270.00, 'CONFIRMED', NOW()),
+  (107, 1, 4, 1, '2026-11-15 08:00:00', '2026-11-16 18:00:00', 180.00, 'CONFIRMED', NOW()),
+  (108, 1, 4, 2, '2026-11-18 09:00:00', '2026-11-21 18:00:00', 330.00, 'CONFIRMED', NOW()),
+  (104, 1, 4, 5, '2026-11-20 09:00:00', '2026-11-23 17:00:00', 360.00, 'CONFIRMED', NOW()),
+  (109, 1, 2, 10, '2026-11-19 08:00:00', '2026-11-19 16:00:00', 350.00, 'CONFIRMED', NOW()),
+  (110, 1, 3, 10, '2026-11-19 08:00:00', '2026-11-19 16:00:00', 350.00, 'PENDING', NOW()),
+  (105, 1, 2, 12, '2026-11-28 08:00:00', '2026-11-28 16:00:00', 300.00, 'PENDING', NOW())
 ON CONFLICT (id) DO NOTHING;
+
+ALTER SEQUENCE IF EXISTS categories_id_seq RESTART WITH 50;
+ALTER SEQUENCE IF EXISTS items_id_seq RESTART WITH 50;
+ALTER SEQUENCE IF EXISTS users_id_seq RESTART WITH 50;
+ALTER SEQUENCE IF EXISTS reservations_id_seq RESTART WITH 200;

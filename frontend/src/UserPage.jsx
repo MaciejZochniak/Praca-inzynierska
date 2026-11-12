@@ -103,6 +103,11 @@ const formatDateShort = (val) => {
   })
 }
 
+const toDateOnly = (val) => {
+  if (!val) return ''
+  return String(val).slice(0, 10)
+}
+
 const getDeliveryLabel = (r, service) => {
   if (service) return 'Dojazd ekipy'
   return r.deliveryType === 'DELIVERY' ? 'Dostawa pod adres' : 'Odbiór osobisty'
@@ -145,6 +150,8 @@ export default function UserPage({ currentUser, onUserUpdate, onRebookItem }) {
   }
 
   const [reservationCategory, setReservationCategory] = useState('ALL')
+  const [employeeTaskFilter, setEmployeeTaskFilter] = useState('ALL')
+
   const [openCurrentSection, setOpenCurrentSection] = useState(true)
   const [openHistorySection, setOpenHistorySection] = useState(true)
 
@@ -164,7 +171,6 @@ export default function UserPage({ currentUser, onUserUpdate, onRebookItem }) {
   const [reservations, setReservations] = useState([])
   const [resLoading, setResLoading] = useState(false)
 
-  // Stan kalendarza dla pracownika (EMPLOYEE)
   const [currentMonth, setCurrentMonth] = useState(() => {
     const now = new Date()
     return new Date(now.getFullYear(), now.getMonth(), 1)
@@ -202,10 +208,22 @@ export default function UserPage({ currentUser, onUserUpdate, onRebookItem }) {
     }
   }, [activeTab, currentUser, isEmployee])
 
-  const handleStatusChangeByEmployee = async (reservationId, newStatus) => {
+  // Obsługa checkboxa pracownika (oznaczenie zadania jako wykonane / cofnięcie)
+  const handleToggleTaskCheckbox = async (task, checked) => {
+    const resId = task.id || task.reservationId
+    let nextStatus = 'PENDING'
+
+    if (task.taskType === 'HANDOVER_OUT') {
+      // Wydanie sprzętu: zaznaczenie = CONFIRMED (w trakcie wynajmu), odznaczenie = PENDING
+      nextStatus = checked ? 'CONFIRMED' : 'PENDING'
+    } else {
+      // Odbiór sprzętu lub Usługa: zaznaczenie = COMPLETED (zakończone), odznaczenie = CONFIRMED/PENDING
+      nextStatus = checked ? 'COMPLETED' : (task.taskType === 'HANDOVER_IN' ? 'CONFIRMED' : 'PENDING')
+    }
+
     try {
       const res = await fetch(
-        `http://localhost:8080/api/reservations/${reservationId}/status?status=${newStatus}`,
+        `http://localhost:8080/api/reservations/${resId}/status?status=${nextStatus}`,
         { method: 'PATCH' }
       )
       if (res.ok) {
@@ -254,7 +272,7 @@ export default function UserPage({ currentUser, onUserUpdate, onRebookItem }) {
 
   const now = new Date()
 
-  const filteredReservations = useMemo(() => {
+  const filteredClientReservations = useMemo(() => {
     return reservations.filter((r) => {
       if (reservationCategory === 'ALL') return true
       const isService = isServiceReservation(r)
@@ -265,28 +283,81 @@ export default function UserPage({ currentUser, onUserUpdate, onRebookItem }) {
   }, [reservations, reservationCategory])
 
   const activeReservations = useMemo(() => {
-    return filteredReservations.filter((r) => {
+    return filteredClientReservations.filter((r) => {
       const end = new Date(r.endDate || r.endTime)
       return (isNaN(end) || end >= now) && r.status !== 'CANCELLED' && r.status !== 'COMPLETED'
     })
-  }, [filteredReservations, now])
+  }, [filteredClientReservations, now])
 
   const historyReservations = useMemo(() => {
-    return filteredReservations.filter((r) => {
+    return filteredClientReservations.filter((r) => {
       const end = new Date(r.endDate || r.endTime)
       return (!isNaN(end) && end < now) || r.status === 'CANCELLED' || r.status === 'COMPLETED'
     })
-  }, [filteredReservations, now])
+  }, [filteredClientReservations, now])
 
-  // Pomocnicze wyliczenia dla kalendarza grafiku pracownika (EMPLOYEE)
-  const getTasksForDay = (dateStr) => {
-    const dayStart = new Date(`${dateStr}T00:00:00`)
-    const dayEnd = new Date(`${dateStr}T23:59:59`)
-    return filteredReservations.filter((res) => {
-      const rStart = new Date(res.startDate || res.startTime)
-      const rEnd = new Date(res.endDate || res.endTime)
-      return rStart <= dayEnd && rEnd >= dayStart
+  const employeeDailyTasks = useMemo(() => {
+    const tasks = []
+
+    for (const r of reservations) {
+      const service = isServiceReservation(r)
+      const startDay = toDateOnly(r.startDate || r.startTime)
+      const endDay = toDateOnly(r.endDate || r.endTime)
+
+      if (service) {
+        tasks.push({
+          ...r,
+          taskUniqueId: `${r.id || r.reservationId}-SERVICE`,
+          taskDate: startDay,
+          taskType: 'SERVICE',
+          taskTypeLabel: 'Usługa',
+          isDone: r.status === 'COMPLETED'
+        })
+      } else {
+        if (startDay) {
+          tasks.push({
+            ...r,
+            taskUniqueId: `${r.id || r.reservationId}-OUT`,
+            taskDate: startDay,
+            taskType: 'HANDOVER_OUT',
+            taskTypeLabel: 'Wydanie',
+            isDone: r.status === 'CONFIRMED' || r.status === 'COMPLETED'
+          })
+        }
+        if (endDay) {
+          tasks.push({
+            ...r,
+            taskUniqueId: `${r.id || r.reservationId}-IN`,
+            taskDate: endDay,
+            taskType: 'HANDOVER_IN',
+            taskTypeLabel: 'Odbiór',
+            isDone: r.status === 'COMPLETED'
+          })
+        }
+      }
+    }
+
+    return tasks.filter((t) => {
+      if (employeeTaskFilter === 'ALL') return true
+      return t.taskType === employeeTaskFilter
     })
+  }, [reservations, employeeTaskFilter])
+
+  const getTasksForDay = (dateStr) => {
+    return employeeDailyTasks.filter((t) => t.taskDate === dateStr)
+  }
+
+  const formatDayCellSummary = (tasks) => {
+    if (!tasks || tasks.length === 0) return 'brak'
+    const outCount = tasks.filter((t) => t.taskType === 'HANDOVER_OUT').length
+    const inCount = tasks.filter((t) => t.taskType === 'HANDOVER_IN').length
+    const srvCount = tasks.filter((t) => t.taskType === 'SERVICE').length
+
+    const parts = []
+    if (outCount > 0) parts.push(`${outCount} wyd.`)
+    if (inCount > 0) parts.push(`${inCount} odb.`)
+    if (srvCount > 0) parts.push(`${srvCount} usł.`)
+    return parts.join(', ')
   }
 
   const scheduleCalendarDays = useMemo(() => {
@@ -309,16 +380,16 @@ export default function UserPage({ currentUser, onUserUpdate, onRebookItem }) {
       days.push({
         day,
         dateStr,
-        taskCount: tasks.length
+        tasks
       })
     }
     return days
-  }, [currentMonth, filteredReservations])
+  }, [currentMonth, employeeDailyTasks])
 
   const selectedDayTasks = useMemo(() => {
     if (!selectedScheduleDay) return []
     return getTasksForDay(selectedScheduleDay)
-  }, [selectedScheduleDay, filteredReservations])
+  }, [selectedScheduleDay, employeeDailyTasks])
 
   const handleRebook = (res) => {
     if (onRebookItem) {
@@ -437,7 +508,7 @@ export default function UserPage({ currentUser, onUserUpdate, onRebookItem }) {
               }}
             >
               {isEmployee ? <CalendarIcon size={16} /> : <Clock size={16} />}
-              {isEmployee ? 'Grafik pracy (Kalendarz)' : 'Rezerwacje i historia'}
+              {isEmployee ? 'Grafik pracy' : 'Rezerwacje i historia'}
             </button>
           </div>
 
@@ -800,46 +871,47 @@ export default function UserPage({ currentUser, onUserUpdate, onRebookItem }) {
               </div>
             )}
 
-            {/* ZAKŁADKA REZERWACJI (DLA KLIENTA) LUB GRAFIKU W KALENDARZU (DLA PRACOWNIKA) */}
+            {/* ZAKŁADKA REZERWACJI (KLIENT) LUB GRAFIKU W KALENDARZU (PRACOWNIK) */}
             {activeTab === 'RESERVATIONS' && (
               <div>
-                <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1.25rem', flexWrap: 'wrap' }}>
-                  {[
-                    { id: 'ALL', label: 'Wszystkie' },
-                    { id: 'EQUIPMENT', label: 'Sprzęt' },
-                    { id: 'SERVICE', label: 'Usługi' }
-                  ].map((cat) => (
-                    <button
-                      key={cat.id}
-                      onClick={() => setReservationCategory(cat.id)}
-                      style={{
-                        padding: '6px 14px',
-                        borderRadius: '4px',
-                        border: `1px solid ${reservationCategory === cat.id ? THEME.primary : THEME.borderDefault}`,
-                        fontSize: '0.8rem',
-                        fontWeight: 600,
-                        cursor: 'pointer',
-                        backgroundColor: reservationCategory === cat.id ? THEME.primary : THEME.bgSoft,
-                        color: reservationCategory === cat.id ? THEME.white : THEME.textDark
-                      }}
-                    >
-                      {cat.label}
-                    </button>
-                  ))}
-                </div>
-
                 {resLoading && <p style={{ color: THEME.textMuted, fontSize: '0.85rem' }}>Ładowanie danych...</p>}
 
-                {/* WIDOK 1: KALENDARZ GRAFIKU DLA PRACOWNIKA (EMPLOYEE) */}
+                {/* MINIMALISTYCZNY WIDOK GRAFIKU DLA PRACOWNIKA (EMPLOYEE) */}
                 {!resLoading && isEmployee && (
                   <div>
+                    <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1.25rem', flexWrap: 'wrap' }}>
+                      {[
+                        { id: 'ALL', label: 'Wszystkie' },
+                        { id: 'HANDOVER_OUT', label: 'Wydania' },
+                        { id: 'HANDOVER_IN', label: 'Odbiory' },
+                        { id: 'SERVICE', label: 'Usługi' }
+                      ].map((cat) => (
+                        <button
+                          key={cat.id}
+                          onClick={() => setEmployeeTaskFilter(cat.id)}
+                          style={{
+                            padding: '6px 14px',
+                            borderRadius: '4px',
+                            border: `1px solid ${employeeTaskFilter === cat.id ? THEME.primary : THEME.borderDefault}`,
+                            fontSize: '0.8rem',
+                            fontWeight: 600,
+                            cursor: 'pointer',
+                            backgroundColor: employeeTaskFilter === cat.id ? THEME.primary : THEME.bgSoft,
+                            color: employeeTaskFilter === cat.id ? THEME.white : THEME.textDark
+                          }}
+                        >
+                          {cat.label}
+                        </button>
+                      ))}
+                    </div>
+
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', flexWrap: 'wrap', gap: '10px' }}>
                       <div>
                         <h3 style={{ fontSize: '1.1rem', fontWeight: 800, margin: 0 }}>
-                          Kalendarz grafiku zleceń
+                          Kalendarz zadań
                         </h3>
                         <p style={{ fontSize: '0.82rem', color: THEME.textMuted, margin: '2px 0 0 0' }}>
-                          Kliknij wybrany dzień w kalendarzu, aby wyświetlić zaplanowane wydania, dostawy i usługi.
+                          Kliknij dzień w kalendarzu, aby zobaczyć zaplanowane zadania.
                         </p>
                       </div>
 
@@ -884,7 +956,6 @@ export default function UserPage({ currentUser, onUserUpdate, onRebookItem }) {
                       </div>
                     </div>
 
-                    {/* Nagłówki dni tygodnia */}
                     <div style={{
                       display: 'grid',
                       gridTemplateColumns: 'repeat(7, 1fr)',
@@ -898,22 +969,21 @@ export default function UserPage({ currentUser, onUserUpdate, onRebookItem }) {
                       {DAY_NAMES.map((d) => <div key={d}>{d}</div>)}
                     </div>
 
-                    {/* Siatka kratek kalendarza pracownika (taki sam styl jak w ItemPage) */}
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '6px' }}>
                       {scheduleCalendarDays.map((dayObj, idx) => {
                         if (!dayObj) {
-                          return <div key={`empty-${idx}`} style={{ height: '64px' }} />
+                          return <div key={`empty-${idx}`} style={{ height: '62px' }} />
                         }
 
                         const isSelected = selectedScheduleDay === dayObj.dateStr
-                        const hasTasks = dayObj.taskCount > 0
+                        const hasTasks = dayObj.tasks.length > 0
 
                         return (
                           <div
                             key={dayObj.dateStr}
                             onClick={() => setSelectedScheduleDay(dayObj.dateStr)}
                             style={{
-                              height: '64px',
+                              height: '62px',
                               borderRadius: '4px',
                               border: isSelected
                                 ? `2px solid ${THEME.textDark}`
@@ -936,42 +1006,38 @@ export default function UserPage({ currentUser, onUserUpdate, onRebookItem }) {
                               {dayObj.day}
                             </span>
                             <span style={{
-                              fontSize: '0.68rem',
-                              fontWeight: hasTasks ? 700 : 500,
-                              color: hasTasks ? THEME.primary : '#94a3b8',
+                              fontSize: '0.67rem',
+                              color: hasTasks ? THEME.textDark : '#94a3b8',
                               marginTop: '2px'
                             }}>
-                              {dayObj.taskCount === 0
-                                ? 'brak'
-                                : dayObj.taskCount === 1
-                                  ? '1 zadanie'
-                                  : `${dayObj.taskCount} zadania`}
+                              {formatDayCellSummary(dayObj.tasks)}
                             </span>
                           </div>
                         )
                       })}
                     </div>
 
-                    {/* Lista zadań na kliknięty dzień pod kalendarzem */}
+                    {/* Minimalistyczna lista zadań pod kalendarzem ze zwykłym checkboxem */}
                     <div style={{ marginTop: '1.5rem', borderTop: `1px solid ${THEME.borderDivider}`, paddingTop: '1.25rem' }}>
-                      <h4 style={{ margin: '0 0 0.85rem 0', fontSize: '0.98rem', fontWeight: 800 }}>
-                        Zadania zaplanowane na dzień: {selectedScheduleDay} ({selectedDayTasks.length})
+                      <h4 style={{ margin: '0 0 0.85rem 0', fontSize: '0.95rem', fontWeight: 700 }}>
+                        Zadania na dzień {selectedScheduleDay} ({selectedDayTasks.length})
                       </h4>
 
                       {selectedDayTasks.length === 0 ? (
                         <p style={{ fontSize: '0.85rem', color: THEME.textMuted, margin: 0 }}>
-                          Brak zaplanowanych zleceń lub wydań w wybranym dniu.
+                          Brak zadań w wybranym dniu.
                         </p>
                       ) : (
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.65rem' }}>
                           {selectedDayTasks.map((task) => {
-                            const service = isServiceReservation(task)
-                            const statusCfg = getStatusConfig(task.status, service)
+                            const service = task.taskType === 'SERVICE'
+                            const cleanName = (task.itemName || '').replace(/^Usługa:\s*/i, '')
+
                             return (
                               <div
-                                key={task.id || task.reservationId}
+                                key={task.taskUniqueId}
                                 style={{
-                                  padding: '1rem',
+                                  padding: '0.85rem 1rem',
                                   borderRadius: '4px',
                                   border: `1px solid ${THEME.borderDefault}`,
                                   backgroundColor: THEME.bgSoft,
@@ -979,59 +1045,38 @@ export default function UserPage({ currentUser, onUserUpdate, onRebookItem }) {
                                   justifyContent: 'space-between',
                                   alignItems: 'center',
                                   flexWrap: 'wrap',
-                                  gap: '1rem'
+                                  gap: '1rem',
+                                  opacity: task.isDone ? 0.65 : 1
                                 }}
                               >
-                                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                    <span style={{
-                                      padding: '2px 7px',
-                                      borderRadius: '4px',
-                                      fontSize: '0.7rem',
-                                      fontWeight: 700,
-                                      border: `1px solid ${THEME.borderDefault}`,
-                                      backgroundColor: THEME.white
-                                    }}>
-                                      {service ? 'Usługa w terenie' : 'Wydanie / Zwrot sprzętu'}
-                                    </span>
-                                    <strong style={{ fontSize: '0.95rem' }}>
-                                      {(task.itemName || '').replace(/^Usługa:\s*/i, '')}
-                                    </strong>
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
+                                  <div style={{ fontSize: '0.95rem', fontWeight: 700, textDecoration: task.isDone ? 'line-through' : 'none' }}>
+                                    {task.taskTypeLabel}: {cleanName}
                                   </div>
 
                                   <div style={{ fontSize: '0.82rem', color: THEME.textMuted }}>
-                                    Okres: <strong>{formatDateShort(task.startDate)} — {formatDateShort(task.endDate)}</strong>
-                                  </div>
-
-                                  <div style={{ fontSize: '0.82rem', color: THEME.textDark }}>
-                                    Klient: <strong>{task.clientName || 'Gość'}</strong> | Tel.: <strong>{task.clientPhone || '-'}</strong>
-                                  </div>
-
-                                  <div style={{ fontSize: '0.82rem', color: THEME.textMuted }}>
-                                    Miejsce / Transport: <strong>{task.deliveryAddress || getDeliveryLabel(task, service)}</strong>
+                                    Klient: {task.clientName || 'Gość'} (tel. {task.clientPhone || '-'}) | {task.deliveryAddress || getDeliveryLabel(task, service)}
                                   </div>
                                 </div>
 
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                  <select
-                                    value={task.status}
-                                    onChange={(e) => handleStatusChangeByEmployee(task.id || task.reservationId, e.target.value)}
-                                    style={{
-                                      padding: '6px 10px',
-                                      borderRadius: '4px',
-                                      border: `1px solid ${statusCfg.border}`,
-                                      backgroundColor: statusCfg.bg,
-                                      color: statusCfg.color,
-                                      fontSize: '0.8rem',
-                                      fontWeight: 700,
-                                      cursor: 'pointer'
-                                    }}
-                                  >
-                                    <option value="PENDING">Oczekujące</option>
-                                    <option value="CONFIRMED">W trakcie realizacji</option>
-                                    <option value="COMPLETED">{service ? 'Ukończone' : 'Zakończone'}</option>
-                                  </select>
-                                </div>
+                                <label style={{
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  gap: '8px',
+                                  fontSize: '0.85rem',
+                                  fontWeight: 600,
+                                  color: THEME.textDark,
+                                  cursor: 'pointer',
+                                  userSelect: 'none'
+                                }}>
+                                  <input
+                                    type="checkbox"
+                                    checked={task.isDone}
+                                    onChange={(e) => handleToggleTaskCheckbox(task, e.target.checked)}
+                                    style={{ width: '17px', height: '17px', cursor: 'pointer', accentColor: THEME.primary }}
+                                  />
+                                  {task.isDone ? 'Zakończono' : 'Oznacz jako wykonane'}
+                                </label>
                               </div>
                             )
                           })}
@@ -1041,16 +1086,41 @@ export default function UserPage({ currentUser, onUserUpdate, onRebookItem }) {
                   </div>
                 )}
 
-                {/* WIDOK 2: TABELE BIEŻĄCYCH I ZAKOŃCZONYCH ZAMÓWIEŃ DLA KLIENTA (CLIENT) */}
+                {/* WIDOK BIEŻĄCYCH I ZAKOŃCZONYCH ZAMÓWIEŃ DLA KLIENTA (CLIENT) */}
                 {!resLoading && !isEmployee && (
                   <>
-                    {filteredReservations.length === 0 && (
+                    <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1.25rem', flexWrap: 'wrap' }}>
+                      {[
+                        { id: 'ALL', label: 'Wszystkie' },
+                        { id: 'EQUIPMENT', label: 'Sprzęt' },
+                        { id: 'SERVICE', label: 'Usługi' }
+                      ].map((cat) => (
+                        <button
+                          key={cat.id}
+                          onClick={() => setReservationCategory(cat.id)}
+                          style={{
+                            padding: '6px 14px',
+                            borderRadius: '4px',
+                            border: `1px solid ${reservationCategory === cat.id ? THEME.primary : THEME.borderDefault}`,
+                            fontSize: '0.8rem',
+                            fontWeight: 600,
+                            cursor: 'pointer',
+                            backgroundColor: reservationCategory === cat.id ? THEME.primary : THEME.bgSoft,
+                            color: reservationCategory === cat.id ? THEME.white : THEME.textDark
+                          }}
+                        >
+                          {cat.label}
+                        </button>
+                      ))}
+                    </div>
+
+                    {filteredClientReservations.length === 0 && (
                       <p style={{ color: THEME.textMuted, fontSize: '0.85rem', margin: '2rem 0' }}>
                         Brak zamówień w wybranej kategorii.
                       </p>
                     )}
 
-                    {filteredReservations.length > 0 && (
+                    {filteredClientReservations.length > 0 && (
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
                         <div style={{ border: `1px solid ${THEME.borderDefault}`, borderRadius: '4px', overflow: 'hidden' }}>
                           <button

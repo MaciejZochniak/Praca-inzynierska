@@ -9,10 +9,12 @@ import pl.zochniak.ogrodbackend.entity.*;
 import pl.zochniak.ogrodbackend.entity.enums.DeliveryType;
 import pl.zochniak.ogrodbackend.entity.enums.PaymentStatus;
 import pl.zochniak.ogrodbackend.entity.enums.ReservationStatus;
+import pl.zochniak.ogrodbackend.entity.enums.Role;
 import pl.zochniak.ogrodbackend.repository.*;
 
 import java.math.BigDecimal;
 import java.time.Duration;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -25,6 +27,13 @@ public class ReservationService {
     private final UserRepository userRepository;
     private final DeliveryRepository deliveryRepository;
     private final PaymentsRepository paymentsRepository;
+
+    private boolean isServiceItem(Item item) {
+        if (item == null) return false;
+        Long catId = item.getCategory() != null ? item.getCategory().getId() : 0L;
+        String name = item.getName() != null ? item.getName().toLowerCase() : "";
+        return catId >= 10 || name.startsWith("usługa");
+    }
 
     private ReservationResponse mapToResponse(Reservations r) {
         Item item = r.getItemId();
@@ -71,12 +80,9 @@ public class ReservationService {
                 .collect(Collectors.toList());
     }
 
-    // Grafik dla pracownika (wszystkie nieanulowane zlecenia lub przypisane do pracownika)
     @Transactional(readOnly = true)
     public List<ReservationResponse> getEmployeeSchedule(Long employeeId) {
-        return reservationsRepository.findAll().stream()
-                .filter(r -> r.getStatus() != ReservationStatus.CANCELLED)
-                .filter(r -> r.getAssignedEmployee() == null || r.getAssignedEmployee().getId().equals(employeeId))
+        return reservationsRepository.findScheduleForEmployee(employeeId).stream()
                 .map(this::mapToResponse)
                 .collect(Collectors.toList());
     }
@@ -119,26 +125,56 @@ public class ReservationService {
             throw new IllegalStateException("Wybrany termin jest już zajęty (brak wolnych sztuk/ekip).");
         }
 
+        List<User> employees = userRepository.findByRoleOrderByIdAsc(Role.EMPLOYEE);
+        User assignedEmployee = null;
+        boolean service = isServiceItem(item);
+
+        if (!employees.isEmpty()) {
+            if (service) {
+                int serviceWorkersCount = Math.min(2, employees.size());
+                LocalDateTime dayStart = request.getStartDate().toLocalDate().atStartOfDay();
+                LocalDateTime dayEnd = request.getEndDate().toLocalDate().atTime(23, 59, 59);
+
+                for (int i = 0; i < serviceWorkersCount; i++) {
+                    User candidate = employees.get(i);
+                    List<Reservations> empConflicts = reservationsRepository.findEmployeeConflicts(
+                            candidate.getId(), dayStart, dayEnd
+                    );
+                    if (empConflicts.isEmpty()) {
+                        assignedEmployee = candidate;
+                        break;
+                    }
+                }
+
+                if (assignedEmployee == null) {
+                    throw new IllegalStateException("Brak wolnego pracownika usługowego w wybranym dniu (limit 1 usługi dziennie na pracownika został wyczerpany).");
+                }
+            } else {
+                assignedEmployee = employees.get(employees.size() >= 3 ? 2 : employees.size() - 1);
+            }
+        }
+
         long days = Duration.between(request.getStartDate(), request.getEndDate()).toDays();
         if (days <= 0) {
             days = 1;
         }
         BigDecimal baseCost = item.getPrice().multiply(BigDecimal.valueOf(days));
-        BigDecimal deliveryCost = (request.getDeliveryType() == DeliveryType.DELIVERY)
+        BigDecimal deliveryCost = (!service && request.getDeliveryType() == DeliveryType.DELIVERY)
                 ? BigDecimal.valueOf(50)
                 : BigDecimal.ZERO;
         BigDecimal totalCost = baseCost.add(deliveryCost);
 
         User user = null;
         if (request.getUserId() != null) {
-            user = userRepository.findById(request.getUserId())
-                    .orElseThrow(() -> new IllegalArgumentException("Nie znaleziono użytkownika."));
-        } else if (request.getGuestName() == null || request.getGuestEmail() == null || request.getGuestPhone() == null) {
+            user = userRepository.findById(request.getUserId()).orElse(null);
+        }
+        if (user == null && (request.getGuestName() == null || request.getGuestEmail() == null || request.getGuestPhone() == null)) {
             throw new IllegalArgumentException("Wymagane są dane kontaktowe.");
         }
 
         Reservations reservation = Reservations.builder()
                 .user(user)
+                .assignedEmployee(assignedEmployee)
                 .guestName(request.getGuestName())
                 .guestEmail(request.getGuestEmail())
                 .guestPhone(request.getGuestPhone())
@@ -151,17 +187,20 @@ public class ReservationService {
 
         Reservations savedReservation = reservationsRepository.save(reservation);
 
-        if (request.getDeliveryType() != null) {
-            Delivery delivery = Delivery.builder()
-                    .reservation(savedReservation)
-                    .deliveryType(request.getDeliveryType())
-                    .street(request.getStreet())
-                    .city(request.getCity())
-                    .postalCode(request.getPostalCode())
-                    .cost(deliveryCost)
-                    .build();
-            deliveryRepository.save(delivery);
-        }
+        DeliveryType effectiveDeliveryType = request.getDeliveryType() != null
+                ? request.getDeliveryType()
+                : DeliveryType.PICKUP;
+
+        Delivery delivery = Delivery.builder()
+                .reservation(savedReservation)
+                .deliveryType(effectiveDeliveryType)
+                .street(request.getStreet() != null ? request.getStreet() : "")
+                .city(request.getCity() != null ? request.getCity() : "")
+                .postalCode(request.getPostalCode() != null ? request.getPostalCode() : "")
+                .cost(deliveryCost)
+                .build();
+        Delivery savedDelivery = deliveryRepository.save(delivery);
+        savedReservation.setDelivery(savedDelivery);
 
         if (request.getPaymentType() != null) {
             Payments payment = Payments.builder()
@@ -170,7 +209,8 @@ public class ReservationService {
                     .amount(totalCost)
                     .status(PaymentStatus.PENDING)
                     .build();
-            paymentsRepository.save(payment);
+            Payments savedPayment = paymentsRepository.save(payment);
+            savedReservation.setPayment(savedPayment);
         }
 
         ReservationResponse response = mapToResponse(savedReservation);
