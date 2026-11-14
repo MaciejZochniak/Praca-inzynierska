@@ -445,7 +445,7 @@ export default function ItemPage({ currentUser, onAddToCart, cartCount = 0 }) {
             backgroundColor: THEME.surface
           }}>
             <img
-              src={`${API_BASE}${item.imageUrl}`}
+              src={item.imageUrl?.startsWith('http') || item.imageUrl?.startsWith('data:') ? item.imageUrl : `http://localhost:8080${item.imageUrl}`}
               alt={item.name}
               onError={(e) => { e.target.src = 'https://placehold.co/600x400/f8fafc/475569?text=GardenBooking' }}
               style={{ width: '100%', height: '100%', objectFit: 'cover' }}

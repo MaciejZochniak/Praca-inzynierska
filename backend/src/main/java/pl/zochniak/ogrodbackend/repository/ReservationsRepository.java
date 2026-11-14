@@ -2,6 +2,7 @@ package pl.zochniak.ogrodbackend.repository;
 
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 import pl.zochniak.ogrodbackend.entity.Reservations;
@@ -16,6 +17,8 @@ public interface ReservationsRepository extends JpaRepository<Reservations, Long
     List<Reservations> findByUserId(Long userId);
 
     List<Reservations> findByStatus(ReservationStatus status);
+
+    List<Reservations> findByItemId_Id(Long itemId);
 
     @Query("SELECT r FROM Reservations r " +
            "WHERE r.assignedEmployee.id = :employeeId " +

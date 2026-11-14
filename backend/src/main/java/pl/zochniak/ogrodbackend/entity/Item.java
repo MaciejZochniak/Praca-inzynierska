@@ -44,7 +44,7 @@ public class Item {
     @Builder.Default
     private Boolean isAvailable = true;
 
-    @Column(name = "image_url", length = 255)
+    @Column(name = "image_url", columnDefinition = "TEXT")
     private String imageUrl;
 
     @CreationTimestamp

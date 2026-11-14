@@ -16,9 +16,15 @@ import {
   PlayCircle,
   Clock3,
   ChevronDown,
-  ChevronUp
+  ChevronUp,
+  Package,
+  BarChart3,
+  ExternalLink,
+  Trash2
 } from 'lucide-react'
 import logoImage from './assets/GardenBookingLogo.png'
+
+const API_BASE = 'http://localhost:8080'
 
 const THEME = {
   primary: '#556B2F',
@@ -32,6 +38,12 @@ const THEME = {
   borderDivider: '#e2e8f0'
 }
 
+function resolveImgUrl(url) {
+  if (!url) return 'https://placehold.co/120x80/f8fafc/475569?text=Brak'
+  if (url.startsWith('http') || url.startsWith('data:')) return url
+  return `${API_BASE}${url}`
+}
+
 function isServiceReservation(res) {
   const name = (res.itemName || '').toLowerCase()
   return (
@@ -43,6 +55,18 @@ function isServiceReservation(res) {
     name.includes('wycinka') ||
     name.includes('zakładanie') ||
     name.includes('karczowanie')
+  )
+}
+
+function isServiceCatalogItem(item) {
+  if (!item) return false
+  const name = (item.name || '').toLowerCase()
+  const catDesc = (item.category?.description || '').toLowerCase()
+  const catId = item.category?.id || 0
+  return (
+    name.startsWith('usługa:') ||
+    catDesc.includes('usług') ||
+    (catId >= 10 && catId < 50)
   )
 }
 
@@ -126,7 +150,9 @@ export default function UserPage({ currentUser, onUserUpdate, onRebookItem }) {
   const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
 
+  const isAdmin = currentUser?.role === 'ADMIN'
   const isEmployee = currentUser?.role === 'EMPLOYEE'
+  const isStaff = isAdmin || isEmployee
 
   useEffect(() => {
     if (!currentUser) {
@@ -135,16 +161,28 @@ export default function UserPage({ currentUser, onUserUpdate, onRebookItem }) {
   }, [currentUser, navigate])
 
   const tabFromUrl = searchParams.get('tab')
-  const [activeTab, setActiveTab] = useState(
-    tabFromUrl === 'RESERVATIONS' ? 'RESERVATIONS' : 'PROFILE'
-  )
+  const [activeTab, setActiveTab] = useState(() => {
+    if (isAdmin) {
+      if (tabFromUrl === 'OFFER' || tabFromUrl === 'ANALYTICS' || tabFromUrl === 'SCHEDULE') {
+        return tabFromUrl
+      }
+      return 'SCHEDULE'
+    }
+    return tabFromUrl === 'RESERVATIONS' ? 'RESERVATIONS' : 'PROFILE'
+  })
 
   useEffect(() => {
     const t = searchParams.get('tab')
-    if (t === 'RESERVATIONS' || t === 'PROFILE') {
+    if (isAdmin) {
+      if (t === 'OFFER' || t === 'ANALYTICS' || t === 'SCHEDULE') {
+        setActiveTab(t)
+      } else if (t === 'RESERVATIONS' || t === 'PROFILE') {
+        setActiveTab('SCHEDULE')
+      }
+    } else if (t === 'RESERVATIONS' || t === 'PROFILE') {
       setActiveTab(t)
     }
-  }, [searchParams])
+  }, [searchParams, isAdmin])
 
   const handleTabSwitch = (tab) => {
     setActiveTab(tab)
@@ -153,9 +191,39 @@ export default function UserPage({ currentUser, onUserUpdate, onRebookItem }) {
 
   const [reservationCategory, setReservationCategory] = useState('ALL')
   const [employeeTaskFilter, setEmployeeTaskFilter] = useState('ALL')
+  const [adminEmployeeFilter, setAdminEmployeeFilter] = useState('ALL')
+
+  // Filtry i sortowanie tabeli historii zadań
+  const [histSearch, setHistSearch] = useState('')
+  const [histType, setHistType] = useState('ALL')
+  const [histCategory, setHistCategory] = useState('ALL')
+  const [histDateFrom, setHistDateFrom] = useState('')
+  const [histDateTo, setHistDateTo] = useState('')
+  const [histSortBy, setHistSortBy] = useState('DATE_DESC')
 
   const [openCurrentSection, setOpenCurrentSection] = useState(true)
   const [openHistorySection, setOpenHistorySection] = useState(true)
+
+  // Sekcja Oferta (dla Admina)
+  const [catalogItems, setCatalogItems] = useState([])
+  const [categoriesList, setCategoriesList] = useState([])
+  const [offerLoading, setOfferLoading] = useState(false)
+  const [openServicesOffer, setOpenServicesOffer] = useState(true)
+  const [openEquipmentOffer, setOpenEquipmentOffer] = useState(true)
+  const [offerFormMode, setOfferFormMode] = useState(null)
+  const [offerFormData, setOfferFormData] = useState({
+    id: null,
+    categoryId: '',
+    newCategoryName: '',
+    name: '',
+    brand: '',
+    description: '',
+    price: '',
+    quantity: 1,
+    imageUrl: '/images/kosiarka.jpg'
+  })
+  const [offerSaving, setOfferSaving] = useState(false)
+  const [confirmDeleteOffer, setConfirmDeleteOffer] = useState(null)
 
   const [editingField, setEditingField] = useState(null)
   const [isChangingPassword, setIsChangingPassword] = useState(false)
@@ -173,7 +241,6 @@ export default function UserPage({ currentUser, onUserUpdate, onRebookItem }) {
   const [reservations, setReservations] = useState([])
   const [resLoading, setResLoading] = useState(false)
 
-  // Formularz wprowadzania szczegółów konsultacji przez pracownika
   const [activeConsultation, setActiveConsultation] = useState(null)
   const [consultForm, setConsultForm] = useState({
     agreedPrice: '',
@@ -182,16 +249,19 @@ export default function UserPage({ currentUser, onUserUpdate, onRebookItem }) {
   })
   const [consultSaving, setConsultSaving] = useState(false)
 
-  // Okno potwierdzenia zakończenia lub anulowania zadania
   const [confirmAction, setConfirmAction] = useState(null)
 
   const fetchReservationsOrSchedule = () => {
     const uid = currentUser?.userId || currentUser?.id
     if (!uid) return
     setResLoading(true)
-    const url = isEmployee
-      ? `http://localhost:8080/api/reservations/schedule/${uid}`
-      : `http://localhost:8080/api/reservations/user/${uid}`
+
+    let url = `${API_BASE}/api/reservations/user/${uid}`
+    if (isAdmin) {
+      url = `${API_BASE}/api/reservations/all`
+    } else if (isEmployee) {
+      url = `${API_BASE}/api/reservations/schedule/${uid}`
+    }
 
     fetch(url)
       .then((res) => {
@@ -208,17 +278,37 @@ export default function UserPage({ currentUser, onUserUpdate, onRebookItem }) {
       })
   }
 
+  const fetchCatalogAndCategories = async () => {
+    setOfferLoading(true)
+    try {
+      const [itemsRes, catRes] = await Promise.all([
+        fetch(`${API_BASE}/api/items`),
+        fetch(`${API_BASE}/api/items/categories`)
+      ])
+      const itemsData = itemsRes.ok ? await itemsRes.json() : []
+      const catData = catRes.ok ? await catRes.json() : []
+      setCatalogItems(Array.isArray(itemsData) ? itemsData : [])
+      setCategoriesList(Array.isArray(catData) ? catData : [])
+    } catch {
+      setCatalogItems([])
+    } finally {
+      setOfferLoading(false)
+    }
+  }
+
   useEffect(() => {
-    if (activeTab === 'RESERVATIONS') {
+    if (activeTab === 'RESERVATIONS' || activeTab === 'SCHEDULE') {
       fetchReservationsOrSchedule()
     }
-  }, [activeTab, currentUser, isEmployee])
+    if (isAdmin && activeTab === 'OFFER') {
+      fetchCatalogAndCategories()
+    }
+  }, [activeTab, currentUser, isAdmin, isEmployee])
 
-  // Zmiana statusu zadania przez pracownika (wykonane / anulowane)
   const handleEmployeeStatusUpdate = async (reservationId, newStatus) => {
     try {
       const res = await fetch(
-        `http://localhost:8080/api/reservations/${reservationId}/status?status=${newStatus}`,
+        `${API_BASE}/api/reservations/${reservationId}/status?status=${newStatus}`,
         { method: 'PATCH' }
       )
       if (res.ok) {
@@ -229,7 +319,6 @@ export default function UserPage({ currentUser, onUserUpdate, onRebookItem }) {
     }
   }
 
-  // Zatwierdzenie szczegółów konsultacji przez pracownika
   const handleConfirmConsultationSubmit = async (e) => {
     e.preventDefault()
     if (!activeConsultation) return
@@ -237,7 +326,7 @@ export default function UserPage({ currentUser, onUserUpdate, onRebookItem }) {
 
     const cid = activeConsultation.id || activeConsultation.reservationId
     try {
-      const res = await fetch(`http://localhost:8080/api/reservations/${cid}/confirm-consultation`, {
+      const res = await fetch(`${API_BASE}/api/reservations/${cid}/confirm-consultation`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -256,6 +345,112 @@ export default function UserPage({ currentUser, onUserUpdate, onRebookItem }) {
     }
   }
 
+  // Filtrowanie kategorii w zależności od tego, czy dodajemy Usługę, czy Sprzęt
+  const getCategoriesForType = (itemType) => {
+    return categoriesList.filter((c) => {
+      const desc = (c.description || '').toLowerCase()
+      const isSrvCat = desc.includes('usług') || (c.id >= 10 && c.id < 50)
+      return itemType === 'SERVICE' ? isSrvCat : !isSrvCat
+    })
+  }
+
+  const handleOpenAddOffer = (itemType) => {
+    const relevantCats = getCategoriesForType(itemType)
+    setOfferFormData({
+      id: null,
+      categoryId: relevantCats[0]?.id || (relevantCats.length === 0 ? 'NEW' : ''),
+      newCategoryName: '',
+      name: '',
+      brand: '',
+      description: '',
+      price: '',
+      quantity: itemType === 'SERVICE' ? 2 : 1,
+      imageUrl: '/images/kosiarka.jpg'
+    })
+    setOfferFormMode({ mode: 'ADD', itemType })
+  }
+
+  const handleOpenEditOffer = (item) => {
+    const service = isServiceCatalogItem(item)
+    setOfferFormData({
+      id: item.id,
+      categoryId: item.category?.id || (service ? 10 : 1),
+      newCategoryName: '',
+      name: (item.name || '').replace(/^Usługa:\s*/i, ''),
+      brand: item.brand || '',
+      description: item.description || '',
+      price: item.price || '',
+      quantity: item.quantity ?? 1,
+      imageUrl: item.imageUrl || '/images/kosiarka.jpg'
+    })
+    setOfferFormMode({ mode: 'EDIT', itemType: service ? 'SERVICE' : 'EQUIPMENT' })
+  }
+
+  const handleOfferImageFileChange = (e) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    const reader = new FileReader()
+    reader.onloadend = () => {
+      if (typeof reader.result === 'string') {
+        setOfferFormData((prev) => ({ ...prev, imageUrl: reader.result }))
+      }
+    }
+    reader.readAsDataURL(file)
+  }
+
+  const handleSaveOfferSubmit = async (e) => {
+    e.preventDefault()
+    if (!offerFormMode) return
+    setOfferSaving(true)
+
+    const isEdit = offerFormMode.mode === 'EDIT' && offerFormData.id
+    const url = isEdit
+      ? `${API_BASE}/api/items/${offerFormData.id}`
+      : `${API_BASE}/api/items`
+    const method = isEdit ? 'PUT' : 'POST'
+
+    const isCreatingNewCategory = String(offerFormData.categoryId) === 'NEW'
+
+    try {
+      const res = await fetch(url, {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          itemType: offerFormMode.itemType,
+          categoryId: isCreatingNewCategory ? null : Number(offerFormData.categoryId),
+          newCategoryName: isCreatingNewCategory ? offerFormData.newCategoryName : null,
+          name: offerFormData.name,
+          brand: offerFormMode.itemType === 'EQUIPMENT' ? offerFormData.brand : null,
+          description: offerFormData.description,
+          price: Number(offerFormData.price),
+          quantity: Number(offerFormData.quantity) || 1,
+          imageUrl: offerFormData.imageUrl
+        })
+      })
+      if (res.ok) {
+        setOfferFormMode(null)
+        fetchCatalogAndCategories()
+      }
+    } finally {
+      setOfferSaving(false)
+    }
+  }
+
+  const handleDeleteOfferConfirm = async () => {
+    if (!confirmDeleteOffer) return
+    try {
+      const res = await fetch(`${API_BASE}/api/items/${confirmDeleteOffer.id}`, {
+        method: 'DELETE'
+      })
+      if (res.ok) {
+        setConfirmDeleteOffer(null)
+        fetchCatalogAndCategories()
+      }
+    } catch {
+      setConfirmDeleteOffer(null)
+    }
+  }
+
   const handleSave = async (e) => {
     if (e) e.preventDefault()
     setLoading(true)
@@ -269,7 +464,7 @@ export default function UserPage({ currentUser, onUserUpdate, onRebookItem }) {
 
     const uid = currentUser?.userId || currentUser?.id
     try {
-      const res = await fetch(`http://localhost:8080/api/auth/profile/${uid}`, {
+      const res = await fetch(`${API_BASE}/api/auth/profile/${uid}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(formData)
@@ -294,7 +489,6 @@ export default function UserPage({ currentUser, onUserUpdate, onRebookItem }) {
 
   const now = new Date()
 
-  // Dane dla KLIENTA
   const filteredClientReservations = useMemo(() => {
     return reservations.filter((r) => {
       if (reservationCategory === 'ALL') return true
@@ -319,8 +513,7 @@ export default function UserPage({ currentUser, onUserUpdate, onRebookItem }) {
     })
   }, [filteredClientReservations, now])
 
-  // Dane dla PRACOWNIKA (lista zadań do tabeli)
-  const employeeTaskRows = useMemo(() => {
+  const allStaffTaskRows = useMemo(() => {
     const rows = []
 
     for (const r of reservations) {
@@ -333,7 +526,9 @@ export default function UserPage({ currentUser, onUserUpdate, onRebookItem }) {
           rowKey: `${r.id}-CONSULT`,
           taskKind: 'CONSULTATION',
           taskLabel: 'Konsultacja telefoniczna',
+          rawDate: r.startDate,
           displayDate: formatDateTimeShort(r.startDate),
+          isServiceType: true,
           isDone: r.status === 'COMPLETED',
           isCancelled: r.status === 'CANCELLED'
         })
@@ -343,7 +538,9 @@ export default function UserPage({ currentUser, onUserUpdate, onRebookItem }) {
           rowKey: `${r.id}-SERVICE`,
           taskKind: 'SERVICE',
           taskLabel: 'Usługa do realizacji',
+          rawDate: r.startDate,
           displayDate: formatDateShort(r.startDate),
+          isServiceType: true,
           isDone: r.status === 'COMPLETED',
           isCancelled: r.status === 'CANCELLED'
         })
@@ -353,7 +550,9 @@ export default function UserPage({ currentUser, onUserUpdate, onRebookItem }) {
           rowKey: `${r.id}-OUT`,
           taskKind: 'HANDOVER_OUT',
           taskLabel: 'Wydanie sprzętu',
+          rawDate: r.startDate,
           displayDate: formatDateShort(r.startDate),
+          isServiceType: false,
           isDone: r.status === 'CONFIRMED' || r.status === 'COMPLETED',
           isCancelled: r.status === 'CANCELLED'
         })
@@ -362,27 +561,108 @@ export default function UserPage({ currentUser, onUserUpdate, onRebookItem }) {
           rowKey: `${r.id}-IN`,
           taskKind: 'HANDOVER_IN',
           taskLabel: 'Odbiór sprzętu',
+          rawDate: r.endDate,
           displayDate: formatDateShort(r.endDate),
+          isServiceType: false,
           isDone: r.status === 'COMPLETED',
           isCancelled: r.status === 'CANCELLED'
         })
       }
     }
+    return rows
+  }, [reservations])
 
-    return rows.filter((row) => {
-      if (employeeTaskFilter === 'ALL') return true
-      return row.taskKind === employeeTaskFilter
+  const availableStaffNames = useMemo(() => {
+    const set = new Set(
+      allStaffTaskRows
+        .map((r) => r.assignedEmployeeName)
+        .filter((n) => n && n !== 'Nieprzypisany')
+    )
+    return Array.from(set)
+  }, [allStaffTaskRows])
+
+  const availableHistoryCategories = useMemo(() => {
+    const set = new Set(
+      allStaffTaskRows
+        .filter((r) => {
+          if (histType === 'EQUIPMENT') return !r.isServiceType
+          if (histType === 'SERVICE') return r.isServiceType
+          return true
+        })
+        .map((r) => r.categoryName)
+        .filter(Boolean)
+    )
+    return Array.from(set)
+  }, [allStaffTaskRows, histType])
+
+  const staffCurrentTasks = useMemo(() => {
+    return allStaffTaskRows.filter((row) => {
+      if (row.isDone || row.isCancelled) return false
+      if (employeeTaskFilter !== 'ALL' && row.taskKind !== employeeTaskFilter) return false
+      if (isAdmin && adminEmployeeFilter !== 'ALL' && row.assignedEmployeeName !== adminEmployeeFilter) return false
+      return true
     })
-  }, [reservations, employeeTaskFilter])
+  }, [allStaffTaskRows, employeeTaskFilter, isAdmin, adminEmployeeFilter])
 
-  const employeeCurrentTasks = useMemo(
-    () => employeeTaskRows.filter((r) => !r.isDone && !r.isCancelled),
-    [employeeTaskRows]
+  const staffDoneTasksFilteredAndSorted = useMemo(() => {
+    const baseDone = allStaffTaskRows.filter((row) => {
+      if (!row.isDone && !row.isCancelled) return false
+      if (employeeTaskFilter !== 'ALL' && row.taskKind !== employeeTaskFilter) return false
+      if (isAdmin && adminEmployeeFilter !== 'ALL' && row.assignedEmployeeName !== adminEmployeeFilter) return false
+
+      if (histType === 'EQUIPMENT' && row.isServiceType) return false
+      if (histType === 'SERVICE' && !row.isServiceType) return false
+
+      if (histCategory !== 'ALL' && row.categoryName !== histCategory) return false
+
+      const dateOnly = row.rawDate ? String(row.rawDate).slice(0, 10) : ''
+      if (histDateFrom && dateOnly && dateOnly < histDateFrom) return false
+      if (histDateTo && dateOnly && dateOnly > histDateTo) return false
+
+      if (histSearch.trim() !== '') {
+        const q = histSearch.toLowerCase()
+        const cleanName = (row.itemName || '').replace(/^Usługa:\s*/i, '').toLowerCase()
+        const client = (row.clientName || '').toLowerCase()
+        const emp = (row.assignedEmployeeName || '').toLowerCase()
+        const cat = (row.categoryName || '').toLowerCase()
+        if (!cleanName.includes(q) && !client.includes(q) && !emp.includes(q) && !cat.includes(q)) {
+          return false
+        }
+      }
+      return true
+    })
+
+    return [...baseDone].sort((a, b) => {
+      if (histSortBy === 'NAME_ASC') {
+        const nameA = (a.itemName || '').replace(/^Usługa:\s*/i, '')
+        const nameB = (b.itemName || '').replace(/^Usługa:\s*/i, '')
+        return nameA.localeCompare(nameB, 'pl')
+      }
+      const timeA = a.rawDate ? new Date(a.rawDate).getTime() : 0
+      const timeB = b.rawDate ? new Date(b.rawDate).getTime() : 0
+      if (histSortBy === 'DATE_ASC') return timeA - timeB
+      return timeB - timeA
+    })
+  }, [
+    allStaffTaskRows,
+    employeeTaskFilter,
+    isAdmin,
+    adminEmployeeFilter,
+    histType,
+    histCategory,
+    histDateFrom,
+    histDateTo,
+    histSearch,
+    histSortBy
+  ])
+
+  const serviceCatalogItems = useMemo(
+    () => catalogItems.filter((i) => isServiceCatalogItem(i)),
+    [catalogItems]
   )
-
-  const employeeDoneTasks = useMemo(
-    () => employeeTaskRows.filter((r) => r.isDone || r.isCancelled),
-    [employeeTaskRows]
+  const equipmentCatalogItems = useMemo(
+    () => catalogItems.filter((i) => !isServiceCatalogItem(i)),
+    [catalogItems]
   )
 
   const handleRebook = (res) => {
@@ -411,6 +691,16 @@ export default function UserPage({ currentUser, onUserUpdate, onRebookItem }) {
     color: THEME.textDark,
     borderBottom: `1px solid ${THEME.borderDivider}`,
     verticalAlign: 'middle'
+  }
+
+  const filterInputStyle = {
+    width: '100%',
+    padding: '7px 10px',
+    borderRadius: '4px',
+    border: `1px solid ${THEME.borderDefault}`,
+    backgroundColor: THEME.white,
+    fontSize: '0.83rem',
+    boxSizing: 'border-box'
   }
 
   return (
@@ -448,7 +738,7 @@ export default function UserPage({ currentUser, onUserUpdate, onRebookItem }) {
             </span>
           </Link>
           <span style={{ fontSize: '0.85rem', color: THEME.textMuted }}>
-            / {isEmployee ? 'Panel pracownika' : 'Panel klienta'}
+            / {isAdmin ? 'Panel administratora' : isEmployee ? 'Panel pracownika' : 'Panel klienta'}
           </span>
         </div>
 
@@ -473,7 +763,7 @@ export default function UserPage({ currentUser, onUserUpdate, onRebookItem }) {
         </Link>
       </nav>
 
-      <main style={{ maxWidth: '1120px', margin: '2rem auto', padding: '0 1rem' }}>
+      <main style={{ maxWidth: '1180px', margin: '2rem auto', padding: '0 1rem 3rem 1rem' }}>
         <div style={{
           backgroundColor: THEME.white,
           borderRadius: '4px',
@@ -481,48 +771,118 @@ export default function UserPage({ currentUser, onUserUpdate, onRebookItem }) {
           overflow: 'hidden'
         }}>
           <div style={{ display: 'flex', backgroundColor: '#f8fafc', borderBottom: `1px solid ${THEME.borderDivider}` }}>
-            <button
-              onClick={() => handleTabSwitch('PROFILE')}
-              style={{
-                flex: 1,
-                padding: '14px',
-                border: 'none',
-                borderBottom: activeTab === 'PROFILE' ? `2px solid ${THEME.borderHover}` : '2px solid transparent',
-                backgroundColor: activeTab === 'PROFILE' ? THEME.white : 'transparent',
-                color: activeTab === 'PROFILE' ? THEME.textDark : THEME.textMuted,
-                fontWeight: 700,
-                fontSize: '0.9rem',
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: '8px'
-              }}
-            >
-              <User size={16} />
-              Dane profilu
-            </button>
-            <button
-              onClick={() => handleTabSwitch('RESERVATIONS')}
-              style={{
-                flex: 1,
-                padding: '14px',
-                border: 'none',
-                borderBottom: activeTab === 'RESERVATIONS' ? `2px solid ${THEME.borderHover}` : '2px solid transparent',
-                backgroundColor: activeTab === 'RESERVATIONS' ? THEME.white : 'transparent',
-                color: activeTab === 'RESERVATIONS' ? THEME.textDark : THEME.textMuted,
-                fontWeight: 700,
-                fontSize: '0.9rem',
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: '8px'
-              }}
-            >
-              <Clock size={16} />
-              {isEmployee ? 'Grafik zadań' : 'Rezerwacje i historia'}
-            </button>
+            {isAdmin ? (
+              <>
+                <button
+                  onClick={() => handleTabSwitch('SCHEDULE')}
+                  style={{
+                    flex: 1,
+                    padding: '14px',
+                    border: 'none',
+                    borderBottom: activeTab === 'SCHEDULE' ? `2px solid ${THEME.borderHover}` : '2px solid transparent',
+                    backgroundColor: activeTab === 'SCHEDULE' ? THEME.white : 'transparent',
+                    color: activeTab === 'SCHEDULE' ? THEME.textDark : THEME.textMuted,
+                    fontWeight: 700,
+                    fontSize: '0.9rem',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '8px'
+                  }}
+                >
+                  <Clock size={16} />
+                  1. Grafik
+                </button>
+                <button
+                  onClick={() => handleTabSwitch('OFFER')}
+                  style={{
+                    flex: 1,
+                    padding: '14px',
+                    border: 'none',
+                    borderBottom: activeTab === 'OFFER' ? `2px solid ${THEME.borderHover}` : '2px solid transparent',
+                    backgroundColor: activeTab === 'OFFER' ? THEME.white : 'transparent',
+                    color: activeTab === 'OFFER' ? THEME.textDark : THEME.textMuted,
+                    fontWeight: 700,
+                    fontSize: '0.9rem',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '8px'
+                  }}
+                >
+                  <Package size={16} />
+                  2. Oferta
+                </button>
+                <button
+                  onClick={() => handleTabSwitch('ANALYTICS')}
+                  style={{
+                    flex: 1,
+                    padding: '14px',
+                    border: 'none',
+                    borderBottom: activeTab === 'ANALYTICS' ? `2px solid ${THEME.borderHover}` : '2px solid transparent',
+                    backgroundColor: activeTab === 'ANALYTICS' ? THEME.white : 'transparent',
+                    color: activeTab === 'ANALYTICS' ? THEME.textDark : THEME.textMuted,
+                    fontWeight: 700,
+                    fontSize: '0.9rem',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '8px'
+                  }}
+                >
+                  <BarChart3 size={16} />
+                  3. Analiza
+                </button>
+              </>
+            ) : (
+              <>
+                <button
+                  onClick={() => handleTabSwitch('PROFILE')}
+                  style={{
+                    flex: 1,
+                    padding: '14px',
+                    border: 'none',
+                    borderBottom: activeTab === 'PROFILE' ? `2px solid ${THEME.borderHover}` : '2px solid transparent',
+                    backgroundColor: activeTab === 'PROFILE' ? THEME.white : 'transparent',
+                    color: activeTab === 'PROFILE' ? THEME.textDark : THEME.textMuted,
+                    fontWeight: 700,
+                    fontSize: '0.9rem',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '8px'
+                  }}
+                >
+                  <User size={16} />
+                  Dane profilu
+                </button>
+                <button
+                  onClick={() => handleTabSwitch('RESERVATIONS')}
+                  style={{
+                    flex: 1,
+                    padding: '14px',
+                    border: 'none',
+                    borderBottom: activeTab === 'RESERVATIONS' ? `2px solid ${THEME.borderHover}` : '2px solid transparent',
+                    backgroundColor: activeTab === 'RESERVATIONS' ? THEME.white : 'transparent',
+                    color: activeTab === 'RESERVATIONS' ? THEME.textDark : THEME.textMuted,
+                    fontWeight: 700,
+                    fontSize: '0.9rem',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '8px'
+                  }}
+                >
+                  <Clock size={16} />
+                  {isEmployee ? 'Grafik zadań' : 'Rezerwacje i historia'}
+                </button>
+              </>
+            )}
           </div>
 
           <div className="user-page-pad" style={{ padding: '1.75rem' }}>
@@ -546,7 +906,7 @@ export default function UserPage({ currentUser, onUserUpdate, onRebookItem }) {
             )}
 
             {/* ZAKŁADKA DANYCH PROFILU */}
-            {activeTab === 'PROFILE' && (
+            {!isAdmin && activeTab === 'PROFILE' && (
               <div>
                 <h3 style={{ margin: '0 0 1.25rem 0', fontSize: '1.15rem', color: THEME.textDark }}>
                   Twoje dane osobowe ({isEmployee ? 'Pracownik' : 'Klient'})
@@ -734,136 +1094,65 @@ export default function UserPage({ currentUser, onUserUpdate, onRebookItem }) {
               </div>
             )}
 
-            {/* ZAKŁADKA GRAFIKU PRACOWNIKA (TABELA) */}
-            {activeTab === 'RESERVATIONS' && isEmployee && (
+            {/* SEKCJA 1 (ADMIN) ORAZ GRAFIK (PRACOWNIK) */}
+            {isStaff && (activeTab === 'RESERVATIONS' || activeTab === 'SCHEDULE') && (
               <div>
-                <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1.25rem', flexWrap: 'wrap' }}>
-                  {[
-                    { id: 'ALL', label: 'Wszystkie' },
-                    { id: 'CONSULTATION', label: 'Konsultacje' },
-                    { id: 'SERVICE', label: 'Usługi do realizacji' },
-                    { id: 'HANDOVER_OUT', label: 'Wydania sprzętu' },
-                    { id: 'HANDOVER_IN', label: 'Odbiory sprzętu' }
-                  ].map((cat) => (
-                    <button
-                      key={cat.id}
-                      onClick={() => setEmployeeTaskFilter(cat.id)}
-                      style={{
-                        padding: '6px 14px',
-                        borderRadius: '4px',
-                        border: `1px solid ${employeeTaskFilter === cat.id ? THEME.primary : THEME.borderDefault}`,
-                        fontSize: '0.8rem',
-                        fontWeight: 600,
-                        cursor: 'pointer',
-                        backgroundColor: employeeTaskFilter === cat.id ? THEME.primary : THEME.bgSoft,
-                        color: employeeTaskFilter === cat.id ? THEME.white : THEME.textDark
-                      }}
-                    >
-                      {cat.label}
-                    </button>
-                  ))}
-                </div>
-
-                {/* FORMULARZ WPROWADZANIA SZCZEGÓŁÓW KONSULTACJI PRZEZ PRACOWNIKA */}
-                {activeConsultation && (
-                  <div style={{
-                    marginBottom: '1.5rem',
-                    padding: '1.25rem',
-                    borderRadius: '4px',
-                    border: `1px solid ${THEME.borderHover}`,
-                    backgroundColor: THEME.bgSoft
-                  }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
-                      <h4 style={{ margin: 0, fontSize: '1rem', fontWeight: 800 }}>
-                        Ustalenia po konsultacji: {(activeConsultation.itemName || '').replace(/^Usługa:\s*/i, '')}
-                      </h4>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem', flexWrap: 'wrap', gap: '0.75rem' }}>
+                  <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                    {[
+                      { id: 'ALL', label: 'Wszystkie typy zadań' },
+                      { id: 'CONSULTATION', label: 'Konsultacje' },
+                      { id: 'SERVICE', label: 'Usługi do realizacji' },
+                      { id: 'HANDOVER_OUT', label: 'Wydania sprzętu' },
+                      { id: 'HANDOVER_IN', label: 'Odbiory sprzętu' }
+                    ].map((cat) => (
                       <button
-                        type="button"
-                        onClick={() => setActiveConsultation(null)}
-                        style={{ padding: '4px 10px', borderRadius: '4px', border: `1px solid ${THEME.borderDefault}`, backgroundColor: THEME.white, fontSize: '0.8rem', cursor: 'pointer' }}
+                        key={cat.id}
+                        onClick={() => setEmployeeTaskFilter(cat.id)}
+                        style={{
+                          padding: '6px 14px',
+                          borderRadius: '4px',
+                          border: `1px solid ${employeeTaskFilter === cat.id ? THEME.primary : THEME.borderDefault}`,
+                          fontSize: '0.8rem',
+                          fontWeight: 600,
+                          cursor: 'pointer',
+                          backgroundColor: employeeTaskFilter === cat.id ? THEME.primary : THEME.bgSoft,
+                          color: employeeTaskFilter === cat.id ? THEME.white : THEME.textDark
+                        }}
                       >
-                        Zamknij
+                        {cat.label}
                       </button>
-                    </div>
-
-                    <p style={{ fontSize: '0.82rem', color: THEME.textMuted, margin: '0 0 1rem 0' }}>
-                      Klient: <strong>{activeConsultation.clientName}</strong> (tel. {activeConsultation.clientPhone}) | {activeConsultation.customerNotes}
-                    </p>
-
-                    <form onSubmit={handleConfirmConsultationSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
-                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '0.85rem' }}>
-                        <div>
-                          <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 700, color: THEME.textMuted, marginBottom: '4px' }}>
-                            Ustalona kwota (zł)
-                          </label>
-                          <input
-                            type="number"
-                            min="1"
-                            step="0.01"
-                            required
-                            placeholder="np. 450"
-                            value={consultForm.agreedPrice}
-                            onChange={(e) => setConsultForm({ ...consultForm, agreedPrice: e.target.value })}
-                            style={{ width: '100%', padding: '8px 10px', borderRadius: '4px', border: `1px solid ${THEME.borderDefault}`, backgroundColor: THEME.white, boxSizing: 'border-box' }}
-                          />
-                        </div>
-
-                        <div>
-                          <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 700, color: THEME.textMuted, marginBottom: '4px' }}>
-                            Przybliżony czas realizacji
-                          </label>
-                          <input
-                            type="text"
-                            required
-                            placeholder="np. 1 dzień (ok. 6 godz.)"
-                            value={consultForm.estimatedDuration}
-                            onChange={(e) => setConsultForm({ ...consultForm, estimatedDuration: e.target.value })}
-                            style={{ width: '100%', padding: '8px 10px', borderRadius: '4px', border: `1px solid ${THEME.borderDefault}`, backgroundColor: THEME.white, boxSizing: 'border-box' }}
-                          />
-                        </div>
-                      </div>
-
-                      <div>
-                        <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 700, color: THEME.textMuted, marginBottom: '4px' }}>
-                          Szczegóły ustalone z klientem (zakres prac, materiały, dojazd)
-                        </label>
-                        <input
-                          type="text"
-                          required
-                          placeholder="np. Koszenie z wywozem trawy + nawożenie, start od jutra"
-                          value={consultForm.details}
-                          onChange={(e) => setConsultForm({ ...consultForm, details: e.target.value })}
-                          style={{ width: '100%', padding: '8px 10px', borderRadius: '4px', border: `1px solid ${THEME.borderDefault}`, backgroundColor: THEME.white, boxSizing: 'border-box' }}
-                        />
-                      </div>
-
-                      <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-                        <button
-                          type="submit"
-                          disabled={consultSaving}
-                          style={{
-                            padding: '9px 20px',
-                            borderRadius: '4px',
-                            border: `1px solid ${THEME.primary}`,
-                            backgroundColor: THEME.primary,
-                            color: THEME.white,
-                            fontSize: '0.85rem',
-                            fontWeight: 700,
-                            cursor: 'pointer'
-                          }}
-                        >
-                          {consultSaving ? 'Zapisywanie...' : 'Zatwierdź szczegóły'}
-                        </button>
-                      </div>
-                    </form>
+                    ))}
                   </div>
-                )}
+
+                  {isAdmin && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <span style={{ fontSize: '0.8rem', fontWeight: 700, color: THEME.textMuted }}>Pracownik:</span>
+                      <select
+                        value={adminEmployeeFilter}
+                        onChange={(e) => setAdminEmployeeFilter(e.target.value)}
+                        style={{
+                          padding: '6px 10px',
+                          borderRadius: '4px',
+                          border: `1px solid ${THEME.borderDefault}`,
+                          backgroundColor: THEME.white,
+                          fontSize: '0.82rem'
+                        }}
+                      >
+                        <option value="ALL">Wszyscy pracownicy</option>
+                        {availableStaffNames.map((empName) => (
+                          <option key={empName} value={empName}>{empName}</option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+                </div>
 
                 {resLoading && <p style={{ color: THEME.textMuted, fontSize: '0.85rem' }}>Ładowanie grafiku...</p>}
 
                 {!resLoading && (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
-                    {/* TABELA 1: BIEŻĄCE KONSULTACJE, USŁUGI DO REALIZACJI ORAZ WYDANIA/ODBIORY */}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+                    {/* TABELA 1: BIEŻĄCE ZADANIA DO WYKONANIA */}
                     <div style={{ border: `1px solid ${THEME.borderDefault}`, borderRadius: '4px', overflow: 'hidden' }}>
                       <button
                         type="button"
@@ -883,12 +1172,12 @@ export default function UserPage({ currentUser, onUserUpdate, onRebookItem }) {
                           fontSize: '0.9rem'
                         }}
                       >
-                        <span>Do wykonania ({employeeCurrentTasks.length})</span>
+                        <span>Bieżący grafik zadań do wykonania ({staffCurrentTasks.length})</span>
                         {openCurrentSection ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
                       </button>
 
                       {openCurrentSection && (
-                        employeeCurrentTasks.length === 0 ? (
+                        staffCurrentTasks.length === 0 ? (
                           <div style={{ padding: '1rem', fontSize: '0.84rem', color: THEME.textMuted }}>
                             Brak bieżących zadań w grafiku.
                           </div>
@@ -900,13 +1189,14 @@ export default function UserPage({ currentUser, onUserUpdate, onRebookItem }) {
                                   <th style={thStyle}>Typ zadania</th>
                                   <th style={thStyle}>Nazwa</th>
                                   <th style={thStyle}>Data / Godzina</th>
+                                  {isAdmin && <th style={thStyle}>Przydzielony pracownik</th>}
                                   <th style={thStyle}>Klient i adres</th>
                                   <th style={thStyle}>Szczegóły / Kwota</th>
                                   <th style={{ ...thStyle, textAlign: 'right' }}>Akcja</th>
                                 </tr>
                               </thead>
                               <tbody>
-                                {employeeCurrentTasks.map((task) => {
+                                {staffCurrentTasks.map((task) => {
                                   const cleanName = (task.itemName || '').replace(/^Usługa:\s*/i, '')
                                   const resId = task.id || task.reservationId
 
@@ -931,6 +1221,12 @@ export default function UserPage({ currentUser, onUserUpdate, onRebookItem }) {
                                       <td style={{ ...tdStyle, whiteSpace: 'nowrap', fontSize: '0.8rem' }}>
                                         {task.displayDate}
                                       </td>
+
+                                      {isAdmin && (
+                                        <td style={{ ...tdStyle, fontSize: '0.8rem', fontWeight: 600 }}>
+                                          {task.assignedEmployeeName || 'Nieprzypisany'}
+                                        </td>
+                                      )}
 
                                       <td style={{ ...tdStyle, fontSize: '0.8rem' }}>
                                         <div><strong>{task.clientName}</strong> (tel. {task.clientPhone || '-'})</div>
@@ -1055,7 +1351,7 @@ export default function UserPage({ currentUser, onUserUpdate, onRebookItem }) {
                       )}
                     </div>
 
-                    {/* TABELA 2: ZAKOŃCZONE I ANULOWANE ZADANIA PRACOWNIKA */}
+                    {/* TABELA 2: HISTORIA ZADAŃ ZAKOŃCZONYCH I ANULOWANYCH */}
                     <div style={{ border: `1px solid ${THEME.borderDefault}`, borderRadius: '4px', overflow: 'hidden' }}>
                       <button
                         type="button"
@@ -1075,58 +1371,161 @@ export default function UserPage({ currentUser, onUserUpdate, onRebookItem }) {
                           fontSize: '0.9rem'
                         }}
                       >
-                        <span>Zakończone i anulowane ({employeeDoneTasks.length})</span>
+                        <span>Historia zadań zakończonych i anulowanych ({staffDoneTasksFilteredAndSorted.length})</span>
                         {openHistorySection ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
                       </button>
 
                       {openHistorySection && (
-                        employeeDoneTasks.length === 0 ? (
-                          <div style={{ padding: '1rem', fontSize: '0.84rem', color: THEME.textMuted }}>
-                            Brak zakończonych zadań.
-                          </div>
-                        ) : (
-                          <div style={{ width: '100%', overflowX: 'auto' }}>
-                            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                              <thead>
-                                <tr>
-                                  <th style={thStyle}>Typ zadania</th>
-                                  <th style={thStyle}>Nazwa</th>
-                                  <th style={thStyle}>Data</th>
-                                  <th style={thStyle}>Klient</th>
-                                  <th style={thStyle}>Status</th>
-                                </tr>
-                              </thead>
-                              <tbody>
-                                {employeeDoneTasks.map((task) => {
-                                  const cleanName = (task.itemName || '').replace(/^Usługa:\s*/i, '')
-                                  const statusCfg = getStatusConfig(task.status, task.taskKind === 'SERVICE' || task.taskKind === 'CONSULTATION')
+                        <div>
+                          <div style={{
+                            padding: '1rem',
+                            backgroundColor: '#f8fafc',
+                            borderBottom: `1px solid ${THEME.borderDivider}`,
+                            display: 'grid',
+                            gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))',
+                            gap: '0.75rem',
+                            alignItems: 'end'
+                          }}>
+                            <div>
+                              <label style={{ display: 'block', fontSize: '0.73rem', fontWeight: 700, color: THEME.textMuted, marginBottom: '4px' }}>
+                                Wyszukaj
+                              </label>
+                              <input
+                                type="text"
+                                placeholder="Nazwa, klient, pracownik..."
+                                value={histSearch}
+                                onChange={(e) => setHistSearch(e.target.value)}
+                                style={filterInputStyle}
+                              />
+                            </div>
 
-                                  return (
-                                    <tr key={task.rowKey}>
-                                      <td style={tdStyle}>{task.taskLabel}</td>
-                                      <td style={{ ...tdStyle, fontWeight: 700 }}>{cleanName}</td>
-                                      <td style={{ ...tdStyle, fontSize: '0.8rem', color: THEME.textMuted }}>{task.displayDate}</td>
-                                      <td style={{ ...tdStyle, fontSize: '0.8rem' }}>{task.clientName}</td>
-                                      <td style={tdStyle}>
-                                        <span style={{
-                                          padding: '2px 8px',
-                                          borderRadius: '4px',
-                                          fontSize: '0.74rem',
-                                          fontWeight: 700,
-                                          backgroundColor: statusCfg.bg,
-                                          color: statusCfg.color,
-                                          border: `1px solid ${statusCfg.border}`
-                                        }}>
-                                          {task.isCancelled ? 'Anulowane' : 'Zakończone'}
-                                        </span>
-                                      </td>
-                                    </tr>
-                                  )
-                                })}
-                              </tbody>
-                            </table>
+                            <div>
+                              <label style={{ display: 'block', fontSize: '0.73rem', fontWeight: 700, color: THEME.textMuted, marginBottom: '4px' }}>
+                                Typ oferty
+                              </label>
+                              <select
+                                value={histType}
+                                onChange={(e) => { setHistType(e.target.value); setHistCategory('ALL') }}
+                                style={filterInputStyle}
+                              >
+                                <option value="ALL">Sprzęt i usługi</option>
+                                <option value="EQUIPMENT">Tylko sprzęt</option>
+                                <option value="SERVICE">Tylko usługi</option>
+                              </select>
+                            </div>
+
+                            <div>
+                              <label style={{ display: 'block', fontSize: '0.73rem', fontWeight: 700, color: THEME.textMuted, marginBottom: '4px' }}>
+                                Kategoria
+                              </label>
+                              <select
+                                value={histCategory}
+                                onChange={(e) => setHistCategory(e.target.value)}
+                                style={filterInputStyle}
+                              >
+                                <option value="ALL">Wszystkie kategorie</option>
+                                {availableHistoryCategories.map((c) => (
+                                  <option key={c} value={c}>{c}</option>
+                                ))}
+                              </select>
+                            </div>
+
+                            <div>
+                              <label style={{ display: 'block', fontSize: '0.73rem', fontWeight: 700, color: THEME.textMuted, marginBottom: '4px' }}>
+                                Data od
+                              </label>
+                              <input
+                                type="date"
+                                value={histDateFrom}
+                                onChange={(e) => setHistDateFrom(e.target.value)}
+                                style={filterInputStyle}
+                              />
+                            </div>
+
+                            <div>
+                              <label style={{ display: 'block', fontSize: '0.73rem', fontWeight: 700, color: THEME.textMuted, marginBottom: '4px' }}>
+                                Data do
+                              </label>
+                              <input
+                                type="date"
+                                value={histDateTo}
+                                onChange={(e) => setHistDateTo(e.target.value)}
+                                style={filterInputStyle}
+                              />
+                            </div>
+
+                            <div>
+                              <label style={{ display: 'block', fontSize: '0.73rem', fontWeight: 700, color: THEME.textMuted, marginBottom: '4px' }}>
+                                Sortowanie
+                              </label>
+                              <select
+                                value={histSortBy}
+                                onChange={(e) => setHistSortBy(e.target.value)}
+                                style={filterInputStyle}
+                              >
+                                <option value="DATE_DESC">Od najnowszych</option>
+                                <option value="DATE_ASC">Od najstarszych</option>
+                                <option value="NAME_ASC">Alfabetycznie (A - Z)</option>
+                              </select>
+                            </div>
                           </div>
-                        )
+
+                          {staffDoneTasksFilteredAndSorted.length === 0 ? (
+                            <div style={{ padding: '1rem', fontSize: '0.84rem', color: THEME.textMuted }}>
+                              Brak zakończonych lub anulowanych zadań spełniających kryteria.
+                            </div>
+                          ) : (
+                            <div style={{ width: '100%', overflowX: 'auto' }}>
+                              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                                <thead>
+                                  <tr>
+                                    <th style={thStyle}>Typ zadania</th>
+                                    <th style={thStyle}>Kategoria</th>
+                                    <th style={thStyle}>Nazwa</th>
+                                    <th style={thStyle}>Data</th>
+                                    {isAdmin && <th style={thStyle}>Pracownik</th>}
+                                    <th style={thStyle}>Klient</th>
+                                    <th style={thStyle}>Status</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {staffDoneTasksFilteredAndSorted.map((task) => {
+                                    const cleanName = (task.itemName || '').replace(/^Usługa:\s*/i, '')
+                                    const statusCfg = getStatusConfig(task.status, task.isServiceType)
+
+                                    return (
+                                      <tr key={task.rowKey}>
+                                        <td style={tdStyle}>{task.taskLabel}</td>
+                                        <td style={{ ...tdStyle, fontSize: '0.78rem', color: THEME.textMuted }}>{task.categoryName}</td>
+                                        <td style={{ ...tdStyle, fontWeight: 700 }}>{cleanName}</td>
+                                        <td style={{ ...tdStyle, fontSize: '0.8rem', color: THEME.textMuted, whiteSpace: 'nowrap' }}>{task.displayDate}</td>
+                                        {isAdmin && (
+                                          <td style={{ ...tdStyle, fontSize: '0.8rem', fontWeight: 600 }}>
+                                            {task.assignedEmployeeName || 'Nieprzypisany'}
+                                          </td>
+                                        )}
+                                        <td style={{ ...tdStyle, fontSize: '0.8rem' }}>{task.clientName}</td>
+                                        <td style={tdStyle}>
+                                          <span style={{
+                                            padding: '2px 8px',
+                                            borderRadius: '4px',
+                                            fontSize: '0.74rem',
+                                            fontWeight: 700,
+                                            backgroundColor: statusCfg.bg,
+                                            color: statusCfg.color,
+                                            border: `1px solid ${statusCfg.border}`
+                                          }}>
+                                            {task.isCancelled ? 'Anulowane' : 'Zakończone'}
+                                          </span>
+                                        </td>
+                                      </tr>
+                                    )
+                                  })}
+                                </tbody>
+                              </table>
+                            </div>
+                          )}
+                        </div>
                       )}
                     </div>
                   </div>
@@ -1134,8 +1533,350 @@ export default function UserPage({ currentUser, onUserUpdate, onRebookItem }) {
               </div>
             )}
 
+            {/* SEKCJA 2 (ADMIN): ZARZĄDZANIE OFERTĄ */}
+            {isAdmin && activeTab === 'OFFER' && (
+              <div>
+                {offerLoading && <p style={{ color: THEME.textMuted, fontSize: '0.85rem' }}>Ładowanie katalogu ofert...</p>}
+
+                {!offerLoading && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+                    {/* ZWIJANA TABELA 1: USŁUGI OGRODNICZE */}
+                    <div style={{ border: `1px solid ${THEME.borderDefault}`, borderRadius: '4px', overflow: 'hidden' }}>
+                      <div style={{
+                        padding: '12px 16px',
+                        backgroundColor: THEME.bgSoft,
+                        borderBottom: openServicesOffer ? `1px solid ${THEME.borderDivider}` : 'none',
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                        flexWrap: 'wrap',
+                        gap: '10px'
+                      }}>
+                        <button
+                          type="button"
+                          onClick={() => setOpenServicesOffer(!openServicesOffer)}
+                          style={{
+                            background: 'none',
+                            border: 'none',
+                            padding: 0,
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '8px',
+                            fontWeight: 800,
+                            fontSize: '0.95rem',
+                            color: THEME.textDark,
+                            cursor: 'pointer'
+                          }}
+                        >
+                          {openServicesOffer ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
+                          <span>Tabela usług ogrodniczych ({serviceCatalogItems.length})</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => handleOpenAddOffer('SERVICE')}
+                          style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '6px',
+                            padding: '7px 14px',
+                            borderRadius: '4px',
+                            border: `1px solid ${THEME.primary}`,
+                            backgroundColor: THEME.primary,
+                            color: THEME.white,
+                            fontSize: '0.8rem',
+                            fontWeight: 700,
+                            cursor: 'pointer'
+                          }}
+                        >
+                          <Plus size={15} />
+                          Dodaj nową usługę
+                        </button>
+                      </div>
+
+                      {openServicesOffer && (
+                        <div style={{ width: '100%', overflowX: 'auto' }}>
+                          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                            <thead>
+                              <tr>
+                                <th style={thStyle}>ID</th>
+                                <th style={thStyle}>Zdjęcie</th>
+                                <th style={thStyle}>Nazwa usługi</th>
+                                <th style={thStyle}>Kategoria</th>
+                                <th style={thStyle}>Cena bazowa</th>
+                                <th style={{ ...thStyle, textAlign: 'right' }}>Akcje</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {serviceCatalogItems.map((item) => (
+                                <tr key={item.id}>
+                                  <td style={{ ...tdStyle, color: THEME.textMuted }}>#{item.id}</td>
+                                  <td style={tdStyle}>
+                                    <img
+                                      src={resolveImgUrl(item.imageUrl)}
+                                      alt={item.name}
+                                      onError={(e) => { e.target.src = 'https://placehold.co/120x80/f8fafc/475569?text=Brak' }}
+                                      style={{ width: '52px', height: '38px', objectFit: 'cover', borderRadius: '4px', border: `1px solid ${THEME.borderDivider}` }}
+                                    />
+                                  </td>
+                                  <td style={{ ...tdStyle, fontWeight: 700 }}>{(item.name || '').replace(/^Usługa:\s*/i, '')}</td>
+                                  <td style={{ ...tdStyle, fontSize: '0.8rem', color: THEME.textMuted }}>{item.category?.name}</td>
+                                  <td style={{ ...tdStyle, fontWeight: 700 }}>od {Number(item.price).toFixed(2)} zł</td>
+                                  <td style={{ ...tdStyle, textAlign: 'right', whiteSpace: 'nowrap' }}>
+                                    <div style={{ display: 'inline-flex', gap: '6px' }}>
+                                      <button
+                                        type="button"
+                                        onClick={() => navigate(`/item/${item.id}`)}
+                                        style={{
+                                          display: 'inline-flex',
+                                          alignItems: 'center',
+                                          gap: '4px',
+                                          padding: '5px 10px',
+                                          borderRadius: '4px',
+                                          border: `1px solid ${THEME.borderDefault}`,
+                                          backgroundColor: THEME.white,
+                                          color: THEME.textDark,
+                                          fontSize: '0.76rem',
+                                          fontWeight: 600,
+                                          cursor: 'pointer'
+                                        }}
+                                      >
+                                        <ExternalLink size={13} />
+                                        Zobacz ofertę
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => handleOpenEditOffer(item)}
+                                        style={{
+                                          display: 'inline-flex',
+                                          alignItems: 'center',
+                                          gap: '4px',
+                                          padding: '5px 10px',
+                                          borderRadius: '4px',
+                                          border: `1px solid ${THEME.borderDefault}`,
+                                          backgroundColor: THEME.bgSoft,
+                                          color: THEME.textDark,
+                                          fontSize: '0.76rem',
+                                          fontWeight: 600,
+                                          cursor: 'pointer'
+                                        }}
+                                      >
+                                        <Edit3 size={13} />
+                                        Edytuj
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => setConfirmDeleteOffer(item)}
+                                        style={{
+                                          display: 'inline-flex',
+                                          alignItems: 'center',
+                                          gap: '4px',
+                                          padding: '5px 10px',
+                                          borderRadius: '4px',
+                                          border: '1px solid #fecaca',
+                                          backgroundColor: '#fef2f2',
+                                          color: '#b91c1c',
+                                          fontSize: '0.76rem',
+                                          fontWeight: 600,
+                                          cursor: 'pointer'
+                                        }}
+                                      >
+                                        <Trash2 size={13} />
+                                        Usuń
+                                      </button>
+                                    </div>
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* ZWIJANA TABELA 2: SPRZĘT DO WYPOŻYCZENIA */}
+                    <div style={{ border: `1px solid ${THEME.borderDefault}`, borderRadius: '4px', overflow: 'hidden' }}>
+                      <div style={{
+                        padding: '12px 16px',
+                        backgroundColor: THEME.bgSoft,
+                        borderBottom: openEquipmentOffer ? `1px solid ${THEME.borderDivider}` : 'none',
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                        flexWrap: 'wrap',
+                        gap: '10px'
+                      }}>
+                        <button
+                          type="button"
+                          onClick={() => setOpenEquipmentOffer(!openEquipmentOffer)}
+                          style={{
+                            background: 'none',
+                            border: 'none',
+                            padding: 0,
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '8px',
+                            fontWeight: 800,
+                            fontSize: '0.95rem',
+                            color: THEME.textDark,
+                            cursor: 'pointer'
+                          }}
+                        >
+                          {openEquipmentOffer ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
+                          <span>Tabela sprzętu ogrodniczego ({equipmentCatalogItems.length})</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => handleOpenAddOffer('EQUIPMENT')}
+                          style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '6px',
+                            padding: '7px 14px',
+                            borderRadius: '4px',
+                            border: `1px solid ${THEME.primary}`,
+                            backgroundColor: THEME.primary,
+                            color: THEME.white,
+                            fontSize: '0.8rem',
+                            fontWeight: 700,
+                            cursor: 'pointer'
+                          }}
+                        >
+                          <Plus size={15} />
+                          Dodaj nowy sprzęt
+                        </button>
+                      </div>
+
+                      {openEquipmentOffer && (
+                        <div style={{ width: '100%', overflowX: 'auto' }}>
+                          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                            <thead>
+                              <tr>
+                                <th style={thStyle}>ID</th>
+                                <th style={thStyle}>Zdjęcie</th>
+                                <th style={thStyle}>Marka</th>
+                                <th style={thStyle}>Nazwa sprzętu</th>
+                                <th style={thStyle}>Kategoria</th>
+                                <th style={thStyle}>Ilość szt.</th>
+                                <th style={thStyle}>Cena / doba</th>
+                                <th style={{ ...thStyle, textAlign: 'right' }}>Akcje</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {equipmentCatalogItems.map((item) => (
+                                <tr key={item.id}>
+                                  <td style={{ ...tdStyle, color: THEME.textMuted }}>#{item.id}</td>
+                                  <td style={tdStyle}>
+                                    <img
+                                      src={resolveImgUrl(item.imageUrl)}
+                                      alt={item.name}
+                                      onError={(e) => { e.target.src = 'https://placehold.co/120x80/f8fafc/475569?text=Brak' }}
+                                      style={{ width: '52px', height: '38px', objectFit: 'cover', borderRadius: '4px', border: `1px solid ${THEME.borderDivider}` }}
+                                    />
+                                  </td>
+                                  <td style={{ ...tdStyle, fontWeight: 600 }}>{item.brand || '-'}</td>
+                                  <td style={{ ...tdStyle, fontWeight: 700 }}>{item.name}</td>
+                                  <td style={{ ...tdStyle, fontSize: '0.8rem', color: THEME.textMuted }}>{item.category?.name}</td>
+                                  <td style={tdStyle}>{item.quantity ?? 1} szt.</td>
+                                  <td style={{ ...tdStyle, fontWeight: 700 }}>{Number(item.price).toFixed(2)} zł</td>
+                                  <td style={{ ...tdStyle, textAlign: 'right', whiteSpace: 'nowrap' }}>
+                                    <div style={{ display: 'inline-flex', gap: '6px' }}>
+                                      <button
+                                        type="button"
+                                        onClick={() => navigate(`/item/${item.id}`)}
+                                        style={{
+                                          display: 'inline-flex',
+                                          alignItems: 'center',
+                                          gap: '4px',
+                                          padding: '5px 10px',
+                                          borderRadius: '4px',
+                                          border: `1px solid ${THEME.borderDefault}`,
+                                          backgroundColor: THEME.white,
+                                          color: THEME.textDark,
+                                          fontSize: '0.76rem',
+                                          fontWeight: 600,
+                                          cursor: 'pointer'
+                                        }}
+                                      >
+                                        <ExternalLink size={13} />
+                                        Zobacz ofertę
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => handleOpenEditOffer(item)}
+                                        style={{
+                                          display: 'inline-flex',
+                                          alignItems: 'center',
+                                          gap: '4px',
+                                          padding: '5px 10px',
+                                          borderRadius: '4px',
+                                          border: `1px solid ${THEME.borderDefault}`,
+                                          backgroundColor: THEME.bgSoft,
+                                          color: THEME.textDark,
+                                          fontSize: '0.76rem',
+                                          fontWeight: 600,
+                                          cursor: 'pointer'
+                                        }}
+                                      >
+                                        <Edit3 size={13} />
+                                        Edytuj
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => setConfirmDeleteOffer(item)}
+                                        style={{
+                                          display: 'inline-flex',
+                                          alignItems: 'center',
+                                          gap: '4px',
+                                          padding: '5px 10px',
+                                          borderRadius: '4px',
+                                          border: '1px solid #fecaca',
+                                          backgroundColor: '#fef2f2',
+                                          color: '#b91c1c',
+                                          fontSize: '0.76rem',
+                                          fontWeight: 600,
+                                          cursor: 'pointer'
+                                        }}
+                                      >
+                                        <Trash2 size={13} />
+                                        Usuń
+                                      </button>
+                                    </div>
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* SEKCJA 3 (ADMIN): ANALIZA (W BUDOWIE) */}
+            {isAdmin && activeTab === 'ANALYTICS' && (
+              <div style={{
+                padding: '3rem 1.5rem',
+                textAlign: 'center',
+                backgroundColor: THEME.bgSoft,
+                border: `1px solid ${THEME.borderDefault}`,
+                borderRadius: '4px'
+              }}>
+                <BarChart3 size={36} color={THEME.textMuted} style={{ marginBottom: '0.75rem' }} />
+                <h3 style={{ margin: '0 0 0.5rem 0', fontSize: '1.15rem', fontWeight: 800, color: THEME.textDark }}>
+                  Moduł analizy wykorzystania zasobów
+                </h3>
+                <p style={{ margin: 0, fontSize: '0.9rem', color: THEME.textMuted }}>
+                  Ta sekcja jest obecnie w budowie i zostanie wdrożona w ostatnim etapie prac.
+                </p>
+              </div>
+            )}
+
             {/* ZAKŁADKA REZERWACJI DLA KLIENTA (CLIENT) */}
-            {activeTab === 'RESERVATIONS' && !isEmployee && (
+            {!isStaff && activeTab === 'RESERVATIONS' && (
               <div>
                 <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1.25rem', flexWrap: 'wrap' }}>
                   {[
@@ -1257,7 +1998,363 @@ export default function UserPage({ currentUser, onUserUpdate, onRebookItem }) {
         </div>
       </main>
 
-      {/* Minimalistyczne okno potwierdzenia zakończenia lub anulowania zadania */}
+      {/* WYŚRODKOWANY MODAL: Wprowadzanie szczegółów konsultacji */}
+      {activeConsultation && (
+        <div
+          onClick={() => setActiveConsultation(null)}
+          style={{
+            position: 'fixed',
+            inset: 0,
+            backgroundColor: 'rgba(15, 23, 42, 0.45)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '1rem',
+            zIndex: 200
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              backgroundColor: THEME.white,
+              border: `1px solid ${THEME.borderDefault}`,
+              borderRadius: '4px',
+              padding: '1.5rem',
+              width: '100%',
+              maxWidth: '540px',
+              maxHeight: '90vh',
+              overflowY: 'auto'
+            }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
+              <h4 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 800 }}>
+                Ustalenia po konsultacji: {(activeConsultation.itemName || '').replace(/^Usługa:\s*/i, '')}
+              </h4>
+              <button
+                type="button"
+                onClick={() => setActiveConsultation(null)}
+                style={{ padding: '4px 10px', borderRadius: '4px', border: `1px solid ${THEME.borderDefault}`, backgroundColor: THEME.white, fontSize: '0.8rem', cursor: 'pointer' }}
+              >
+                Zamknij
+              </button>
+            </div>
+
+            <p style={{ fontSize: '0.82rem', color: THEME.textMuted, margin: '0 0 1rem 0' }}>
+              Klient: <strong>{activeConsultation.clientName}</strong> (tel. {activeConsultation.clientPhone}) | {activeConsultation.customerNotes}
+            </p>
+
+            <form onSubmit={handleConfirmConsultationSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '0.85rem' }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 700, color: THEME.textMuted, marginBottom: '4px' }}>
+                    Ustalona kwota (zł)
+                  </label>
+                  <input
+                    type="number"
+                    min="1"
+                    step="0.01"
+                    required
+                    placeholder="np. 450"
+                    value={consultForm.agreedPrice}
+                    onChange={(e) => setConsultForm({ ...consultForm, agreedPrice: e.target.value })}
+                    style={filterInputStyle}
+                  />
+                </div>
+
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 700, color: THEME.textMuted, marginBottom: '4px' }}>
+                    Przybliżony czas realizacji
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="np. 1 dzień (ok. 6 godz.)"
+                    value={consultForm.estimatedDuration}
+                    onChange={(e) => setConsultForm({ ...consultForm, estimatedDuration: e.target.value })}
+                    style={filterInputStyle}
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 700, color: THEME.textMuted, marginBottom: '4px' }}>
+                  Szczegóły ustalone z klientem (zakres prac, materiały, dojazd)
+                </label>
+                <input
+                  type="text"
+                  required
+                  placeholder="np. Koszenie z wywozem trawy + nawożenie, start od jutra"
+                  value={consultForm.details}
+                  onChange={(e) => setConsultForm({ ...consultForm, details: e.target.value })}
+                  style={filterInputStyle}
+                />
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '0.5rem' }}>
+                <button
+                  type="button"
+                  onClick={() => setActiveConsultation(null)}
+                  style={{
+                    padding: '8px 14px',
+                    borderRadius: '4px',
+                    border: `1px solid ${THEME.borderDefault}`,
+                    backgroundColor: THEME.white,
+                    fontSize: '0.84rem',
+                    fontWeight: 600,
+                    cursor: 'pointer'
+                  }}
+                >
+                  Anuluj
+                </button>
+                <button
+                  type="submit"
+                  disabled={consultSaving}
+                  style={{
+                    padding: '8px 20px',
+                    borderRadius: '4px',
+                    border: `1px solid ${THEME.primary}`,
+                    backgroundColor: THEME.primary,
+                    color: THEME.white,
+                    fontSize: '0.84rem',
+                    fontWeight: 700,
+                    cursor: 'pointer'
+                  }}
+                >
+                  {consultSaving ? 'Zapisywanie...' : 'Zatwierdź szczegóły'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* WYŚRODKOWANY MODAL: Dodawanie lub edycja oferty sprzętu / usługi (bez podglądu zdjęcia, z opcją dodania nowej kategorii) */}
+      {offerFormMode && (
+        <div
+          onClick={() => setOfferFormMode(null)}
+          style={{
+            position: 'fixed',
+            inset: 0,
+            backgroundColor: 'rgba(15, 23, 42, 0.45)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '1rem',
+            zIndex: 200
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              backgroundColor: THEME.white,
+              border: `1px solid ${THEME.borderDefault}`,
+              borderRadius: '4px',
+              padding: '1.5rem',
+              width: '100%',
+              maxWidth: '620px',
+              maxHeight: '90vh',
+              overflowY: 'auto'
+            }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+              <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 800 }}>
+                {offerFormMode.mode === 'ADD'
+                  ? (offerFormMode.itemType === 'SERVICE' ? 'Dodaj nową usługę' : 'Dodaj nowy sprzęt')
+                  : (offerFormMode.itemType === 'SERVICE' ? 'Edytuj usługę' : 'Edytuj sprzęt')}
+              </h3>
+              <button
+                type="button"
+                onClick={() => setOfferFormMode(null)}
+                style={{
+                  padding: '5px 12px',
+                  borderRadius: '4px',
+                  border: `1px solid ${THEME.borderDefault}`,
+                  backgroundColor: THEME.white,
+                  fontSize: '0.8rem',
+                  fontWeight: 600,
+                  cursor: 'pointer'
+                }}
+              >
+                Zamknij
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveOfferSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '1rem' }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 700, color: THEME.textMuted, marginBottom: '4px' }}>
+                    Nazwa {offerFormMode.itemType === 'SERVICE' ? 'usługi' : 'sprzętu'}
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    placeholder={offerFormMode.itemType === 'SERVICE' ? 'np. Kompleksowe koszenie trawnika' : 'np. Kosiarka spalinowa RM 248'}
+                    value={offerFormData.name}
+                    onChange={(e) => setOfferFormData({ ...offerFormData, name: e.target.value })}
+                    style={filterInputStyle}
+                  />
+                </div>
+
+                {offerFormMode.itemType === 'EQUIPMENT' && (
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 700, color: THEME.textMuted, marginBottom: '4px' }}>
+                      Marka / Producent
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      placeholder="np. STIHL, Husqvarna, Honda"
+                      value={offerFormData.brand}
+                      onChange={(e) => setOfferFormData({ ...offerFormData, brand: e.target.value })}
+                      style={filterInputStyle}
+                    />
+                  </div>
+                )}
+
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 700, color: THEME.textMuted, marginBottom: '4px' }}>
+                    Kategoria
+                  </label>
+                  <select
+                    value={offerFormData.categoryId}
+                    onChange={(e) => setOfferFormData({ ...offerFormData, categoryId: e.target.value })}
+                    style={filterInputStyle}
+                  >
+                    {getCategoriesForType(offerFormMode.itemType).map((c) => (
+                      <option key={c.id} value={c.id}>{c.name}</option>
+                    ))}
+                    <option value="NEW">+ Dodaj nową kategorię...</option>
+                  </select>
+                </div>
+
+                {String(offerFormData.categoryId) === 'NEW' && (
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 700, color: THEME.textMuted, marginBottom: '4px' }}>
+                      Nazwa nowej kategorii
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      placeholder={offerFormMode.itemType === 'SERVICE' ? 'np. Nawadnianie ogrodów' : 'np. Opryskiwacze i pompy'}
+                      value={offerFormData.newCategoryName}
+                      onChange={(e) => setOfferFormData({ ...offerFormData, newCategoryName: e.target.value })}
+                      style={filterInputStyle}
+                    />
+                  </div>
+                )}
+
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 700, color: THEME.textMuted, marginBottom: '4px' }}>
+                    {offerFormMode.itemType === 'SERVICE' ? 'Cena bazowa (zł)' : 'Cena za dobę (zł)'}
+                  </label>
+                  <input
+                    type="number"
+                    min="1"
+                    step="0.01"
+                    required
+                    value={offerFormData.price}
+                    onChange={(e) => setOfferFormData({ ...offerFormData, price: e.target.value })}
+                    style={filterInputStyle}
+                  />
+                </div>
+
+                {offerFormMode.itemType === 'EQUIPMENT' && (
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 700, color: THEME.textMuted, marginBottom: '4px' }}>
+                      Ilość sztuk w wypożyczalni
+                    </label>
+                    <input
+                      type="number"
+                      min="1"
+                      required
+                      value={offerFormData.quantity}
+                      onChange={(e) => setOfferFormData({ ...offerFormData, quantity: e.target.value })}
+                      style={filterInputStyle}
+                    />
+                  </div>
+                )}
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 700, color: THEME.textMuted, marginBottom: '4px' }}>
+                  Opis oferty
+                </label>
+                <textarea
+                  rows={3}
+                  required
+                  placeholder="Szczegółowy opis parametrów technicznych lub zakresu wykonywanej usługi..."
+                  value={offerFormData.description}
+                  onChange={(e) => setOfferFormData({ ...offerFormData, description: e.target.value })}
+                  style={{ ...filterInputStyle, resize: 'vertical', fontFamily: 'inherit' }}
+                />
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '1rem', alignItems: 'center' }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 700, color: THEME.textMuted, marginBottom: '4px' }}>
+                    Ścieżka zdjęcia lub adres URL
+                  </label>
+                  <input
+                    type="text"
+                    value={offerFormData.imageUrl}
+                    onChange={(e) => setOfferFormData({ ...offerFormData, imageUrl: e.target.value })}
+                    placeholder="/images/kosiarka.jpg"
+                    style={filterInputStyle}
+                  />
+                </div>
+
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 700, color: THEME.textMuted, marginBottom: '4px' }}>
+                    Lub wybierz plik zdjęcia z dysku
+                  </label>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    onChange={handleOfferImageFileChange}
+                    style={{ fontSize: '0.8rem' }}
+                  />
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '0.25rem' }}>
+                <button
+                  type="button"
+                  onClick={() => setOfferFormMode(null)}
+                  style={{
+                    padding: '9px 16px',
+                    borderRadius: '4px',
+                    border: `1px solid ${THEME.borderDefault}`,
+                    backgroundColor: THEME.white,
+                    fontSize: '0.85rem',
+                    fontWeight: 600,
+                    cursor: 'pointer'
+                  }}
+                >
+                  Anuluj
+                </button>
+                <button
+                  type="submit"
+                  disabled={offerSaving}
+                  style={{
+                    padding: '9px 22px',
+                    borderRadius: '4px',
+                    border: `1px solid ${THEME.primary}`,
+                    backgroundColor: THEME.primary,
+                    color: THEME.white,
+                    fontSize: '0.85rem',
+                    fontWeight: 700,
+                    cursor: 'pointer'
+                  }}
+                >
+                  {offerSaving ? 'Zapisywanie...' : 'Zapisz ofertę'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal potwierdzenia zmiany statusu zadania */}
       {confirmAction && (
         <div
           onClick={() => setConfirmAction(null)}
@@ -1324,6 +2421,76 @@ export default function UserPage({ currentUser, onUserUpdate, onRebookItem }) {
                 }}
               >
                 {confirmAction.nextStatus === 'CANCELLED' ? 'Tak, anuluj' : 'Tak, zakończ'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal potwierdzenia usunięcia oferty */}
+      {confirmDeleteOffer && (
+        <div
+          onClick={() => setConfirmDeleteOffer(null)}
+          style={{
+            position: 'fixed',
+            inset: 0,
+            backgroundColor: 'rgba(15, 23, 42, 0.45)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '1rem',
+            zIndex: 200
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              backgroundColor: THEME.white,
+              border: `1px solid ${THEME.borderDefault}`,
+              borderRadius: '4px',
+              padding: '1.5rem',
+              width: '100%',
+              maxWidth: '420px'
+            }}
+          >
+            <h4 style={{ margin: '0 0 0.6rem 0', fontSize: '1.05rem', fontWeight: 800, color: THEME.textDark }}>
+              Potwierdzenie usunięcia oferty
+            </h4>
+            <p style={{ margin: '0 0 1.25rem 0', fontSize: '0.88rem', lineHeight: 1.5, color: THEME.textMuted }}>
+              Czy na pewno chcesz trwale usunąć ofertę <strong>„{(confirmDeleteOffer.name || '').replace(/^Usługa:\s*/i, '')}”</strong> z katalogu?
+            </p>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
+              <button
+                type="button"
+                onClick={() => setConfirmDeleteOffer(null)}
+                style={{
+                  padding: '8px 14px',
+                  borderRadius: '4px',
+                  border: `1px solid ${THEME.borderDefault}`,
+                  backgroundColor: THEME.white,
+                  color: THEME.textDark,
+                  fontSize: '0.84rem',
+                  fontWeight: 600,
+                  cursor: 'pointer'
+                }}
+              >
+                Wróć
+              </button>
+              <button
+                type="button"
+                onClick={handleDeleteOfferConfirm}
+                style={{
+                  padding: '8px 16px',
+                  borderRadius: '4px',
+                  border: '1px solid #b91c1c',
+                  backgroundColor: '#b91c1c',
+                  color: THEME.white,
+                  fontSize: '0.84rem',
+                  fontWeight: 700,
+                  cursor: 'pointer'
+                }}
+              >
+                Tak, usuń ofertę
               </button>
             </div>
           </div>

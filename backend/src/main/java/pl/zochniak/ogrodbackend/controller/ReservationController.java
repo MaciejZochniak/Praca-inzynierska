@@ -27,6 +27,11 @@ public class ReservationController {
         return ResponseEntity.status(HttpStatus.CREATED).body(response);
     }
 
+    @GetMapping("/all")
+    public ResponseEntity<List<ReservationResponse>> getAllReservationsForAdmin() {
+        return ResponseEntity.ok(reservationService.getAllReservationsForAdmin());
+    }
+
     @GetMapping("/user/{userId}")
     public ResponseEntity<List<ReservationResponse>> getUserReservations(@PathVariable Long userId) {
         return ResponseEntity.ok(reservationService.getReservationsByUserId(userId));

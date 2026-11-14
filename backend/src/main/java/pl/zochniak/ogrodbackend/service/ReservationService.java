@@ -15,6 +15,7 @@ import pl.zochniak.ogrodbackend.repository.*;
 import java.math.BigDecimal;
 import java.time.Duration;
 import java.time.LocalDateTime;
+import java.util.Comparator;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -59,11 +60,21 @@ public class ReservationService {
             }
         }
 
+        User emp = r.getAssignedEmployee();
+        String empName = emp != null
+                ? ((emp.getFirstName() != null ? emp.getFirstName() : "") + " " + (emp.getLastName() != null ? emp.getLastName() : "")).trim()
+                : "Nieprzypisany";
+
+        String categoryName = (item != null && item.getCategory() != null)
+                ? item.getCategory().getName()
+                : "Inne";
+
         return ReservationResponse.builder()
                 .id(r.getId())
                 .reservationId(r.getId())
                 .itemId(item != null ? item.getId() : null)
                 .itemName(item != null ? item.getName() : "Zamówienie #" + r.getId())
+                .categoryName(categoryName)
                 .status(r.getStatus())
                 .startDate(r.getStartTime())
                 .endDate(r.getEndTime())
@@ -75,6 +86,8 @@ public class ReservationService {
                 .clientEmail(clientEmail)
                 .deliveryAddress(address)
                 .customerNotes(r.getCustomerNotes())
+                .assignedEmployeeId(emp != null ? emp.getId() : null)
+                .assignedEmployeeName(empName)
                 .build();
     }
 
@@ -92,6 +105,14 @@ public class ReservationService {
                 .collect(Collectors.toList());
     }
 
+    @Transactional(readOnly = true)
+    public List<ReservationResponse> getAllReservationsForAdmin() {
+        return reservationsRepository.findAll().stream()
+                .sorted(Comparator.comparing(Reservations::getStartTime, Comparator.nullsLast(Comparator.reverseOrder())))
+                .map(this::mapToResponse)
+                .collect(Collectors.toList());
+    }
+
     @Transactional
     public ReservationResponse updateReservationStatus(Long reservationId, ReservationStatus newStatus) {
         Reservations res = reservationsRepository.findById(reservationId)
@@ -100,9 +121,6 @@ public class ReservationService {
         return mapToResponse(reservationsRepository.save(res));
     }
 
-    // Zatwierdzenie szczegółów konsultacji przez pracownika:
-    // 1. Konsultacja zmienia status na COMPLETED
-    // 2. Tworzy się właściwa usługa do realizacji z datą od momentu zakończenia konsultacji
     @Transactional
     public ReservationResponse completeConsultationAndScheduleService(
             Long consultationId,
@@ -115,7 +133,6 @@ public class ReservationService {
 
         LocalDateTime now = LocalDateTime.now();
 
-        // 1. Oznacz konsultację jako zakończoną
         consultation.setStatus(ReservationStatus.COMPLETED);
         consultation.setEndTime(now);
         String oldNotes = consultation.getCustomerNotes() != null ? consultation.getCustomerNotes() : "";
@@ -124,7 +141,6 @@ public class ReservationService {
         );
         reservationsRepository.save(consultation);
 
-        // 2. Utwórz właściwą usługę do realizacji od teraz
         String serviceNotes = "REALIZACJA USŁUGI | Szacowany czas: " + estimatedDuration
                 + (details != null && !details.isBlank() ? " | Ustalenia: " + details : "")
                 + (!oldNotes.isBlank() ? " | (" + oldNotes + ")" : "");
@@ -182,7 +198,6 @@ public class ReservationService {
 
         boolean service = isServiceItem(item);
 
-        // Dla sprzętu sprawdzamy dostępność sztuk; dla konsultacji usługowych sprawdzamy wolnych pracowników
         if (!service) {
             List<Reservations> conflicts = reservationsRepository.findConflictingReservations(
                     item.getId(),
@@ -195,7 +210,6 @@ public class ReservationService {
             }
         }
 
-        // Przydział pracownika (2 pierwszych od usług/konsultacji, 3. od sprzętu)
         List<User> employees = userRepository.findByRoleOrderByIdAsc(Role.EMPLOYEE);
         User assignedEmployee = null;
 
@@ -207,17 +221,29 @@ public class ReservationService {
 
                 for (int i = 0; i < serviceWorkersCount; i++) {
                     User candidate = employees.get(i);
-                    List<Reservations> empConflicts = reservationsRepository.findEmployeeConflicts(
+                    List<Reservations> dayRecords = reservationsRepository.findEmployeeConflicts(
                             candidate.getId(), dayStart, dayEnd
                     );
-                    if (empConflicts.isEmpty()) {
+
+                    boolean isBusy = dayRecords.stream().anyMatch(existing -> {
+                        if (existing.getStatus() == ReservationStatus.COMPLETED) {
+                            return false;
+                        }
+                        if (existing.getStatus() == ReservationStatus.CONFIRMED) {
+                            return true;
+                        }
+                        return existing.getStartTime().isBefore(request.getEndDate())
+                                && existing.getEndTime().isAfter(request.getStartDate());
+                    });
+
+                    if (!isBusy) {
                         assignedEmployee = candidate;
                         break;
                     }
                 }
 
                 if (assignedEmployee == null) {
-                    throw new IllegalStateException("Brak wolnego specjalisty w wybranym dniu. Wybierz inny termin konsultacji.");
+                    throw new IllegalStateException("Brak wolnego specjalisty o wybranej godzinie. Wybierz inną godzinę lub dzień.");
                 }
             } else {
                 assignedEmployee = employees.get(employees.size() >= 3 ? 2 : employees.size() - 1);

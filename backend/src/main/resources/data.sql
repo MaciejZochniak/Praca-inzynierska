@@ -34,7 +34,8 @@ VALUES
   (1, 'jan.kowalski@example.com', 'tajnehaslo123', 'Jan', 'Kowalski', '600700800', 'CLIENT', NOW()),
   (2, 'karolina.pracownik@example.com', 'tajnehaslo123', 'Karolina', 'Pracowniczka', '500400300', 'EMPLOYEE', NOW()),
   (3, 'marek.uslugi@example.com', 'tajnehaslo123', 'Marek', 'Ogrodnik', '500400301', 'EMPLOYEE', NOW()),
-  (4, 'piotr.sprzet@example.com', 'tajnehaslo123', 'Piotr', 'Magazynier', '500400302', 'EMPLOYEE', NOW())
+  (4, 'piotr.sprzet@example.com', 'tajnehaslo123', 'Piotr', 'Magazynier', '500400302', 'EMPLOYEE', NOW()),
+  (5, 'admin@example.com', 'tajnehaslo123', 'Adam', 'Administrator', '500100100', 'ADMIN', NOW())
 ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO reservations (id, user_id, assigned_employee_id, item_id, start_time, end_time, total_price, status, created_at)

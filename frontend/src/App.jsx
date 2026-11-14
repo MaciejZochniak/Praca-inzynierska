@@ -526,7 +526,11 @@ function HomeCatalog({ currentUser, handleLogout, cartCount }) {
                   <div>
                     <div style={{ position: 'relative', height: '180px', backgroundColor: '#f1f5f9', borderBottom: `1px solid ${THEME.borderDivider}` }}>
                       <img
-                        src={`http://localhost:8080${item.imageUrl}`}
+                        src={
+                          item.imageUrl?.startsWith('http') || item.imageUrl?.startsWith('data:')
+                            ? item.imageUrl
+                            : `http://localhost:8080${item.imageUrl}`
+                        }
                         alt={item.name}
                         style={{ width: '100%', height: '100%', objectFit: 'cover' }}
                         onError={(e) => { e.target.src = 'https://placehold.co/400x260/f1f5f9/475569?text=GardenBooking' }}

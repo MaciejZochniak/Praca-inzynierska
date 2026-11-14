@@ -20,6 +20,7 @@ public class ReservationResponse {
     private Long reservationId;
     private Long itemId;
     private String itemName;
+    private String categoryName;
     private ReservationStatus status;
     private LocalDateTime startDate;
     private LocalDateTime endDate;
@@ -31,5 +32,7 @@ public class ReservationResponse {
     private String clientEmail;
     private String deliveryAddress;
     private String customerNotes;
+    private Long assignedEmployeeId;
+    private String assignedEmployeeName;
     private String message;
 }
