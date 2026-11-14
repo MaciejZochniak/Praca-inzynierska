@@ -30,11 +30,16 @@ const THEME = {
 
 function isServiceItem(item) {
   if (!item) return false
+  const name = (item.name || '').toLowerCase()
+  const catDesc = (item.category?.description || '').toLowerCase()
   const catId = item.category?.id || 0
-  return catId >= 10 || (item.name || '').toLowerCase().startsWith('usługa:')
+  return (
+    name.startsWith('usługa:') ||
+    catDesc.includes('usług') ||
+    (catId >= 10 && catId < 50)
+  )
 }
 
-// Funkcja pomocnicza wyznaczająca unikalny klucz koszyka dla danego konta (lub gościa)
 function getCartKeyForUser(user) {
   if (!user) return 'garden_cart_guest'
   const identifier = user.userId || user.id || user.email
@@ -49,6 +54,68 @@ function loadCartFromStorage(user) {
   } catch {
     return []
   }
+}
+
+function GlobalFooter() {
+  return (
+    <footer style={{
+      backgroundColor: THEME.surface,
+      color: THEME.textDark,
+      padding: '2rem 1.5rem 1.5rem 1.5rem',
+      marginTop: 'auto',
+      width: '100%',
+      borderTop: `1px solid ${THEME.borderDefault}`,
+      boxSizing: 'border-box'
+    }}>
+      <div style={{
+        maxWidth: '1240px',
+        margin: '0 auto',
+        display: 'grid',
+        gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
+        gap: '1.5rem',
+        marginBottom: '1.5rem'
+      }}>
+        <div>
+          <strong style={{ display: 'block', marginBottom: '0.4rem' }}>GardenBooking</strong>
+          <span style={{ color: THEME.textMuted, fontSize: '0.84rem', lineHeight: 1.5, display: 'block' }}>
+            Wypożyczalnia sprzętu i rezerwacja usług ogrodniczych.
+          </span>
+        </div>
+
+        <div>
+          <strong style={{ display: 'block', marginBottom: '0.4rem', fontSize: '0.9rem' }}>Kontakt</strong>
+          <div style={{ fontSize: '0.84rem', color: THEME.textMuted, lineHeight: 1.6 }}>ul. Ogrodowa 15, 00-001 Warszawa</div>
+          <div style={{ fontSize: '0.84rem', color: THEME.textMuted, lineHeight: 1.6 }}>Tel.: +48 123 456 789 | kontakt@gardenbooking.pl</div>
+        </div>
+
+        <div>
+          <strong style={{ display: 'block', marginBottom: '0.4rem', fontSize: '0.9rem' }}>Godziny otwarcia</strong>
+          <div style={{ fontSize: '0.84rem', color: THEME.textMuted, lineHeight: 1.6 }}>Pon. - Pt.: 08:00 - 18:00</div>
+          <div style={{ fontSize: '0.84rem', color: THEME.textMuted, lineHeight: 1.6 }}>Sob.: 08:00 - 14:00</div>
+        </div>
+
+        <div>
+          <strong style={{ display: 'block', marginBottom: '0.4rem', fontSize: '0.9rem' }}>Informacje i RODO</strong>
+          <div style={{ fontSize: '0.84rem', color: THEME.textMuted, lineHeight: 1.6 }}>• Regulamin wypożyczalni</div>
+          <div style={{ fontSize: '0.84rem', color: THEME.textMuted, lineHeight: 1.6 }}>• Polityka prywatności i RODO</div>
+          <div style={{ fontSize: '0.84rem', color: THEME.textMuted, lineHeight: 1.6 }}>• Cennik transportu i kaucji</div>
+          <div style={{ fontSize: '0.84rem', color: THEME.textMuted, lineHeight: 1.6 }}>• Protokół zdawczo-odbiorczy</div>
+        </div>
+      </div>
+
+      <div style={{
+        maxWidth: '1240px',
+        margin: '0 auto',
+        paddingTop: '1rem',
+        borderTop: `1px solid ${THEME.borderDivider}`,
+        textAlign: 'center',
+        fontSize: '0.76rem',
+        color: THEME.textMuted
+      }}>
+        © {new Date().getFullYear()} GardenBooking. Wszelkie prawa zastrzeżone. Administratorem danych osobowych (RODO) jest GardenBooking Sp. z o.o.
+      </div>
+    </footer>
+  )
 }
 
 function HomeCatalog({ currentUser, handleLogout, cartCount }) {
@@ -137,16 +204,7 @@ function HomeCatalog({ currentUser, handleLogout, cartCount }) {
   }
 
   return (
-    <div style={{
-      minHeight: '100vh',
-      width: '100%',
-      display: 'flex',
-      flexDirection: 'column',
-      backgroundColor: THEME.white,
-      color: THEME.textDark,
-      fontFamily: 'system-ui, -apple-system, sans-serif',
-      boxSizing: 'border-box'
-    }}>
+    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', backgroundColor: THEME.white }}>
       <style>{`
         @media (max-width: 640px) {
           .brand-text-container { display: none !important; }
@@ -227,8 +285,14 @@ function HomeCatalog({ currentUser, handleLogout, cartCount }) {
             <>
               <button
                 type="button"
-                title={currentUser.role === 'EMPLOYEE' ? 'Grafik pracy' : 'Rezerwacje i historia'}
-                onClick={() => navigate('/user?tab=RESERVATIONS')}
+                title={
+                  currentUser.role === 'ADMIN'
+                    ? 'Panel administratora (Grafik)'
+                    : currentUser.role === 'EMPLOYEE'
+                      ? 'Grafik zadań'
+                      : 'Rezerwacje i historia'
+                }
+                onClick={() => navigate(currentUser.role === 'ADMIN' ? '/user?tab=SCHEDULE' : '/user?tab=RESERVATIONS')}
                 style={navIconBtnStyle}
               >
                 <CalendarCheck size={18} />
@@ -237,7 +301,7 @@ function HomeCatalog({ currentUser, handleLogout, cartCount }) {
               <button
                 type="button"
                 title={`Profil (${currentUser.firstName || currentUser.email})`}
-                onClick={() => navigate('/user?tab=PROFILE')}
+                onClick={() => navigate(currentUser.role === 'ADMIN' ? '/user?tab=OFFER' : '/user?tab=PROFILE')}
                 style={navIconBtnStyle}
               >
                 <User size={18} />
@@ -283,8 +347,8 @@ function HomeCatalog({ currentUser, handleLogout, cartCount }) {
 
       <section style={{
         minHeight: '100vh',
-        width: '100%',
         paddingTop: '65px',
+        width: '100%',
         backgroundColor: THEME.primary,
         display: 'flex',
         flexDirection: 'column',
@@ -623,40 +687,6 @@ function HomeCatalog({ currentUser, handleLogout, cartCount }) {
           </div>
         )}
       </main>
-
-      <footer style={{
-        backgroundColor: THEME.surface,
-        color: THEME.textDark,
-        padding: '2rem 1.5rem',
-        marginTop: 'auto',
-        width: '100%',
-        borderTop: `1px solid ${THEME.borderDefault}`,
-        boxSizing: 'border-box'
-      }}>
-        <div style={{
-          maxWidth: '1240px',
-          margin: '0 auto',
-          display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
-          gap: '1.5rem'
-        }}>
-          <div>
-            <strong style={{ display: 'block', marginBottom: '0.4rem' }}>GardenBooking</strong>
-            <span style={{ color: THEME.textMuted, fontSize: '0.84rem' }}>
-              Wypożyczalnia sprzętu i rezerwacja usług ogrodniczych.
-            </span>
-          </div>
-          <div>
-            <strong style={{ display: 'block', marginBottom: '0.4rem', fontSize: '0.9rem' }}>Kontakt</strong>
-            <div style={{ fontSize: '0.84rem', color: THEME.textMuted }}>ul. Ogrodowa 15, 00-001 Warszawa</div>
-            <div style={{ fontSize: '0.84rem', color: THEME.textMuted }}>Tel.: +48 123 456 789 | kontakt@gardenbooking.pl</div>
-          </div>
-          <div>
-            <strong style={{ display: 'block', marginBottom: '0.4rem', fontSize: '0.9rem' }}>Godziny otwarcia</strong>
-            <div style={{ fontSize: '0.84rem', color: THEME.textMuted }}>Pon. - Pt.: 08:00 - 18:00 | Sob.: 08:00 - 14:00</div>
-          </div>
-        </div>
-      </footer>
     </div>
   )
 }
@@ -683,7 +713,6 @@ export default function App() {
     }
   })
 
-  // Helper aktualizujący stan koszyka ODPOWIEDNIEGO użytkownika w localStorage
   const updateCartForCurrentUser = (updater) => {
     setCartItems((prev) => {
       const nextCart = typeof updater === 'function' ? updater(prev) : updater
@@ -696,14 +725,12 @@ export default function App() {
   const handleLoginSuccess = (userData) => {
     setCurrentUser(userData)
     localStorage.setItem('garden_user', JSON.stringify(userData))
-    // Od razu wczytujemy indywidualny koszyk zalogowanego użytkownika
     setCartItems(loadCartFromStorage(userData))
   }
 
   const handleLogout = () => {
     setCurrentUser(null)
     localStorage.removeItem('garden_user')
-    // Po wylogowaniu przełączamy na koszyk gościa
     setCartItems(loadCartFromStorage(null))
     navigate('/')
   }
@@ -726,54 +753,69 @@ export default function App() {
   }
 
   return (
-    <Routes>
-      <Route
-        path="/"
-        element={
-          <HomeCatalog
-            currentUser={currentUser}
-            handleLogout={handleLogout}
-            cartCount={cartItems.length}
+    <div style={{
+      minHeight: '100vh',
+      width: '100%',
+      display: 'flex',
+      flexDirection: 'column',
+      backgroundColor: '#f1f5f9',
+      color: THEME.textDark,
+      fontFamily: 'system-ui, -apple-system, sans-serif',
+      boxSizing: 'border-box'
+    }}>
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
+        <Routes>
+          <Route
+            path="/"
+            element={
+              <HomeCatalog
+                currentUser={currentUser}
+                handleLogout={handleLogout}
+                cartCount={cartItems.length}
+              />
+            }
           />
-        }
-      />
-      <Route
-        path="/item/:id"
-        element={
-          <ItemPage
-            currentUser={currentUser}
-            onAddToCart={handleAddToCart}
-            cartCount={cartItems.length}
+          <Route
+            path="/item/:id"
+            element={
+              <ItemPage
+                currentUser={currentUser}
+                onAddToCart={handleAddToCart}
+                cartCount={cartItems.length}
+              />
+            }
           />
-        }
-      />
-      <Route
-        path="/cart"
-        element={
-          <CartPage
-            currentUser={currentUser}
-            cartItems={cartItems}
-            onRemoveFromCart={handleRemoveFromCart}
-            onClearCart={handleClearCart}
+          <Route
+            path="/cart"
+            element={
+              <CartPage
+                currentUser={currentUser}
+                cartItems={cartItems}
+                onRemoveFromCart={handleRemoveFromCart}
+                onClearCart={handleClearCart}
+              />
+            }
           />
-        }
-      />
-      <Route
-        path="/auth"
-        element={<AuthPage onLoginSuccess={handleLoginSuccess} />}
-      />
-      <Route
-        path="/user"
-        element={
-          <UserPage
-            currentUser={currentUser}
-            onUserUpdate={handleLoginSuccess}
-            onRebookItem={(item) => {
-              if (item?.id) navigate(`/item/${item.id}`)
-            }}
+          <Route
+            path="/auth"
+            element={<AuthPage onLoginSuccess={handleLoginSuccess} />}
           />
-        }
-      />
-    </Routes>
+          <Route
+            path="/user"
+            element={
+              <UserPage
+                currentUser={currentUser}
+                onUserUpdate={handleLoginSuccess}
+                onRebookItem={(item) => {
+                  if (item?.id) navigate(`/item/${item.id}`)
+                }}
+              />
+            }
+          />
+        </Routes>
+      </div>
+
+      <GlobalFooter />
+    </div>
   )
 }
