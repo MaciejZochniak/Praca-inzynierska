@@ -1,15 +1,6 @@
 import { useEffect, useState, useMemo, useRef } from 'react'
 import { Routes, Route, useNavigate } from 'react-router-dom'
-import { 
-  Phone, 
-  ShoppingCart, 
-  CalendarCheck, 
-  User, 
-  LogOut, 
-  LogIn, 
-  UserPlus,
-  ChevronDown
-} from 'lucide-react'
+import { Phone, ShoppingCart, CalendarCheck, User, LogOut, LogIn, UserPlus, ChevronDown} from 'lucide-react'
 import logoImage from './assets/GardenBookingLogo.png'
 import AuthPage from './AuthPage'
 import UserPage from './UserPage'
@@ -28,6 +19,9 @@ const THEME = {
   borderDivider: '#e2e8f0'
 }
 
+//Czy dany item jest usługą, czy sprzętem.
+// W tym projekcie przyjęto, że usługi mają kategorię o id od 10 do 49 włącznie, 
+// lub w nazwie zawierają słowo "usługa", lub w opisie kategorii zawierają słowo "usług".
 function isServiceItem(item) {
   if (!item) return false
   const name = (item.name || '').toLowerCase()
@@ -40,12 +34,14 @@ function isServiceItem(item) {
   )
 }
 
+// Funkcja generująca unikalny klucz dla koszyka w localStorage w zależności od zalogowanego użytkownika
 function getCartKeyForUser(user) {
   if (!user) return 'garden_cart_guest'
   const identifier = user.userId || user.id || user.email
   return identifier ? `garden_cart_user_${identifier}` : 'garden_cart_guest'
 }
 
+// Funkcja ładująca koszyk z localStorage dla danego użytkownika
 function loadCartFromStorage(user) {
   try {
     const key = getCartKeyForUser(user)
@@ -56,6 +52,7 @@ function loadCartFromStorage(user) {
   }
 }
 
+// Komponent stopki globalnej dla wszystkich stron, wyświetlany na dole strony
 function GlobalFooter() {
   return (
     <footer style={{
@@ -64,7 +61,6 @@ function GlobalFooter() {
       padding: '2rem 1.5rem 1.5rem 1.5rem',
       marginTop: 'auto',
       width: '100%',
-      borderTop: `1px solid ${THEME.borderDefault}`,
       boxSizing: 'border-box'
     }}>
       <div style={{
@@ -118,6 +114,7 @@ function GlobalFooter() {
   )
 }
 
+// Komponent głównej strony katalogu, wyświetlający listę produktów i usług
 function HomeCatalog({ currentUser, handleLogout, cartCount }) {
   const navigate = useNavigate()
   const [items, setItems] = useState([])
@@ -196,7 +193,7 @@ function HomeCatalog({ currentUser, handleLogout, cartCount }) {
     width: '38px',
     height: '38px',
     borderRadius: '4px',
-    border: `1px solid ${THEME.borderDefault}`,
+    border: `none`,
     backgroundColor: THEME.white,
     color: THEME.textDark,
     cursor: 'pointer',
@@ -205,13 +202,14 @@ function HomeCatalog({ currentUser, handleLogout, cartCount }) {
 
   return (
     <div style={{ flex: 1, display: 'flex', flexDirection: 'column', backgroundColor: THEME.white }}>
+      {/*Responsywność do telefonów*/}
       <style>{`
         @media (max-width: 640px) {
           .brand-text-container { display: none !important; }
           .navbar-inner { padding: 0 0.75rem !important; }
         }
       `}</style>
-
+      {/*Pasek nawigacji*/}
       <nav
         className="navbar-inner"
         style={{
@@ -691,6 +689,7 @@ function HomeCatalog({ currentUser, handleLogout, cartCount }) {
   )
 }
 
+// Główny komponent aplikacji, zarządzający stanem użytkownika i koszyka
 export default function App() {
   const navigate = useNavigate()
 
@@ -722,12 +721,15 @@ export default function App() {
     })
   }
 
+  // Po zalogowaniu (lub aktualizacji profilu): zapisuje użytkownika
+  // i podmienia koszyk na ten należący do zalogowanego konta.
   const handleLoginSuccess = (userData) => {
     setCurrentUser(userData)
     localStorage.setItem('garden_user', JSON.stringify(userData))
     setCartItems(loadCartFromStorage(userData))
   }
 
+  // Czyści dane użytkownika, przełącza na koszyk gościa i przenosi do home
   const handleLogout = () => {
     setCurrentUser(null)
     localStorage.removeItem('garden_user')
@@ -735,6 +737,7 @@ export default function App() {
     navigate('/')
   }
 
+  // Dodaje pozycję do koszyka, nadając jej unikalny identyfikator wpisu
   const handleAddToCart = (newEntry) => {
     updateCartForCurrentUser((prev) => [
       ...prev,
@@ -742,12 +745,14 @@ export default function App() {
     ])
   }
 
+  // Usuwa z koszyka pojedynczy wpis po jego identyfikatorze
   const handleRemoveFromCart = (cartEntryId) => {
     updateCartForCurrentUser((prev) =>
       prev.filter((item) => item.cartEntryId !== cartEntryId)
     )
   }
 
+  // Opróżnia cały koszyk
   const handleClearCart = () => {
     updateCartForCurrentUser([])
   }

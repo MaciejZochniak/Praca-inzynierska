@@ -43,15 +43,38 @@ public class ItemController {
                 .orElse(ResponseEntity.notFound().build());
     }
 
+    private Category resolveOrCreateCategory(Map<String, Object> body, boolean isService) {
+        Object newCatObj = body.get("newCategoryName");
+        if (newCatObj != null && !newCatObj.toString().trim().isEmpty()) {
+            String newCatName = newCatObj.toString().trim();
+            Category newCategory = Category.builder()
+                    .name(newCatName)
+                    .description(isService ? "Kategoria usług ogrodniczych" : "Kategoria sprzętu ogrodniczego")
+                    .build();
+            return categoryRepository.save(newCategory);
+        }
+
+        if (body.get("categoryId") != null) {
+            Long categoryId = Long.valueOf(body.get("categoryId").toString());
+            return categoryRepository.findById(categoryId)
+                    .orElseThrow(() -> new IllegalArgumentException("Nie znaleziono wybranej kategorii."));
+        }
+        throw new IllegalArgumentException("Wybierz kategorię lub wpisz nazwę nowej kategorii.");
+    }
+
     @PostMapping
     @Transactional
     public ResponseEntity<Item> createItem(@RequestBody Map<String, Object> body) {
-        Long categoryId = Long.valueOf(body.get("categoryId").toString());
-        Category category = categoryRepository.findById(categoryId)
-                .orElseThrow(() -> new IllegalArgumentException("Nie znaleziono wybranej kategorii."));
+        String itemType = body.get("itemType") != null ? body.get("itemType").toString() : "EQUIPMENT";
+        boolean isService = "SERVICE".equalsIgnoreCase(itemType);
+
+        Category category = resolveOrCreateCategory(body, isService);
+        if (!isService && category.getId() != null && category.getId() >= 10 && body.get("newCategoryName") == null) {
+            isService = true;
+        }
 
         String name = body.get("name").toString().trim();
-        if (categoryId >= 10 && !name.toLowerCase().startsWith("usługa:")) {
+        if (isService && !name.toLowerCase().startsWith("usługa:")) {
             name = "Usługa: " + name;
         }
 
@@ -85,17 +108,18 @@ public class ItemController {
         Item item = itemRepository.findById(id)
                 .orElseThrow(() -> new IllegalArgumentException("Nie znaleziono oferty o ID: " + id));
 
-        if (body.get("categoryId") != null) {
-            Long categoryId = Long.valueOf(body.get("categoryId").toString());
-            Category category = categoryRepository.findById(categoryId)
-                    .orElseThrow(() -> new IllegalArgumentException("Nie znaleziono wybranej kategorii."));
+        String itemType = body.get("itemType") != null ? body.get("itemType").toString() : "";
+        boolean isService = "SERVICE".equalsIgnoreCase(itemType)
+                || (item.getName() != null && item.getName().toLowerCase().startsWith("usługa:"));
+
+        if (body.get("newCategoryName") != null || body.get("categoryId") != null) {
+            Category category = resolveOrCreateCategory(body, isService);
             item.setCategory(category);
         }
 
         if (body.get("name") != null) {
             String name = body.get("name").toString().trim();
-            Long catId = item.getCategory() != null ? item.getCategory().getId() : 0L;
-            if (catId >= 10 && !name.toLowerCase().startsWith("usługa:")) {
+            if (isService && !name.toLowerCase().startsWith("usługa:")) {
                 name = "Usługa: " + name;
             }
             item.setName(name);
