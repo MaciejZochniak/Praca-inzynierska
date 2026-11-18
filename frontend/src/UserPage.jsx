@@ -755,7 +755,6 @@ export default function UserPage({ currentUser, onUserUpdate, onRebookItem }) {
             border: `none`
           }}
         >
-          <ArrowLeft size={16} />
           <ArrowLeft size={18} />
         </Link>
       </nav>
