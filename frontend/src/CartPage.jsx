@@ -131,8 +131,7 @@ export default function CartPage({ currentUser, cartItems, onRemoveFromCart, onC
             cursor: 'pointer'
           }}
         >
-          <ArrowLeft size={16} />
-          Kontynuuj przeglądanie
+          <ArrowLeft size={18} />
         </button>
       </nav>
 
@@ -145,7 +144,7 @@ export default function CartPage({ currentUser, cartItems, onRemoveFromCart, onC
         }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem' }}>
             <h1 style={{ fontSize: '1.35rem', fontWeight: 800, margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <ShoppingCart size={20} />
+              <ShoppingCart size={18} />
               Koszyk rezerwacji ({cartItems.length})
             </h1>
             {cartItems.length > 0 && (
@@ -249,7 +248,7 @@ export default function CartPage({ currentUser, cartItems, onRemoveFromCart, onC
                           cursor: 'pointer'
                         }}
                       >
-                        <Trash2 size={16} />
+                        <Trash2 size={18} />
                       </button>
                     </div>
                   </div>
@@ -402,7 +401,7 @@ export default function CartPage({ currentUser, cartItems, onRemoveFromCart, onC
                         cursor: 'pointer'
                       }}
                     >
-                      <CreditCard size={16} />
+                      <CreditCard size={18} />
                       {submitStatus.loading ? 'Przetwarzanie...' : 'Potwierdź i zamów wszystko'}
                     </button>
                   </div>

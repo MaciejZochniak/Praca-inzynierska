@@ -10,8 +10,6 @@ import {
   CheckCircle2, 
   AlertCircle,
   KeyRound,
-  Wrench,
-  Sprout,
   XCircle,
   PlayCircle,
   Clock3,
@@ -81,35 +79,35 @@ function getStatusConfig(status, isService) {
       return {
         label: isService ? 'Ukończone' : 'Zakończone',
         Icon: CheckCircle2,
-        bg: '#f0fdf4',
+        bg: THEME.bgSoft,
         color: '#15803d',
-        border: '#bbf7d0'
+        border: THEME.borderDefault
       }
     case 'CANCELLED':
       return {
         label: 'Anulowane',
         Icon: XCircle,
-        bg: '#fef2f2',
+        bg: THEME.bgSoft,
         color: '#b91c1c',
-        border: '#fecaca'
+        border: THEME.borderDefault
       }
     case 'CONFIRMED':
     case 'IN_PROGRESS':
       return {
         label: 'W trakcie',
         Icon: PlayCircle,
-        bg: '#f1f5f9',
+        bg: THEME.bgSoft,
         color: '#334155',
-        border: '#cbd5e1'
+        border: THEME.borderDefault
       }
     case 'PENDING':
     default:
       return {
         label: 'Oczekujące',
         Icon: Clock3,
-        bg: '#f1f5f9',
+        bg: THEME.bgSoft,
         color: '#475569',
-        border: '#cbd5e1'
+        border: THEME.borderDefault
       }
   }
 }
@@ -754,12 +752,11 @@ export default function UserPage({ currentUser, onUserUpdate, onRebookItem }) {
             fontSize: '0.85rem',
             padding: '7px 12px',
             borderRadius: '4px',
-            border: `1px solid ${THEME.borderDefault}`,
-            backgroundColor: THEME.bgSoft
+            border: `none`
           }}
         >
           <ArrowLeft size={16} />
-          Wróć
+          <ArrowLeft size={18} />
         </Link>
       </nav>
 
@@ -791,8 +788,8 @@ export default function UserPage({ currentUser, onUserUpdate, onRebookItem }) {
                     gap: '8px'
                   }}
                 >
-                  <Clock size={16} />
-                  1. Grafik
+                  <Clock size={18} />
+                  Grafik
                 </button>
                 <button
                   onClick={() => handleTabSwitch('OFFER')}
@@ -812,8 +809,8 @@ export default function UserPage({ currentUser, onUserUpdate, onRebookItem }) {
                     gap: '8px'
                   }}
                 >
-                  <Package size={16} />
-                  2. Oferta
+                  <Package size={18} />
+                  Oferta
                 </button>
                 <button
                   onClick={() => handleTabSwitch('ANALYTICS')}
@@ -833,8 +830,8 @@ export default function UserPage({ currentUser, onUserUpdate, onRebookItem }) {
                     gap: '8px'
                   }}
                 >
-                  <BarChart3 size={16} />
-                  3. Analiza
+                  <BarChart3 size={18} />
+                  Analiza
                 </button>
               </>
             ) : (
@@ -933,7 +930,7 @@ export default function UserPage({ currentUser, onUserUpdate, onRebookItem }) {
                           onClick={() => { setEditingField('NAME'); setProfileMsg(null) }}
                           style={{ display: 'flex', alignItems: 'center', gap: '5px', padding: '6px 14px', borderRadius: '4px', border: `1px solid ${THEME.borderDefault}`, backgroundColor: THEME.white, fontSize: '0.82rem', fontWeight: 600, cursor: 'pointer' }}
                         >
-                          <Edit3 size={14} /> Edytuj
+                          <Edit3 size={18} />
                         </button>
                       ) : (
                         <div style={{ display: 'flex', gap: '6px' }}>
@@ -1001,7 +998,7 @@ export default function UserPage({ currentUser, onUserUpdate, onRebookItem }) {
                           onClick={() => { setEditingField('PHONE'); setProfileMsg(null) }}
                           style={{ display: 'flex', alignItems: 'center', gap: '5px', padding: '6px 14px', borderRadius: '4px', border: `1px solid ${THEME.borderDefault}`, backgroundColor: THEME.white, fontSize: '0.82rem', fontWeight: 600, cursor: 'pointer' }}
                         >
-                          {formData.phoneNumber ? <><Edit3 size={14} /> Edytuj</> : <><Plus size={14} /> Dodaj</>}
+                          {formData.phoneNumber ? <><Edit3 size={18} /> Edytuj</> : <><Plus size={18} /> Dodaj</>}
                         </button>
                       ) : (
                         <div style={{ display: 'flex', gap: '6px' }}>
@@ -1641,8 +1638,7 @@ export default function UserPage({ currentUser, onUserUpdate, onRebookItem }) {
                                           cursor: 'pointer'
                                         }}
                                       >
-                                        <ExternalLink size={13} />
-                                        Zobacz ofertę
+                                        <ExternalLink size={18} />
                                       </button>
                                       <button
                                         type="button"
@@ -1661,8 +1657,7 @@ export default function UserPage({ currentUser, onUserUpdate, onRebookItem }) {
                                           cursor: 'pointer'
                                         }}
                                       >
-                                        <Edit3 size={13} />
-                                        Edytuj
+                                        <Edit3 size={18} />
                                       </button>
                                       <button
                                         type="button"
@@ -1681,8 +1676,7 @@ export default function UserPage({ currentUser, onUserUpdate, onRebookItem }) {
                                           cursor: 'pointer'
                                         }}
                                       >
-                                        <Trash2 size={13} />
-                                        Usuń
+                                        <Trash2 size={18} />
                                       </button>
                                     </div>
                                   </td>
@@ -1799,8 +1793,7 @@ export default function UserPage({ currentUser, onUserUpdate, onRebookItem }) {
                                           cursor: 'pointer'
                                         }}
                                       >
-                                        <ExternalLink size={13} />
-                                        Zobacz ofertę
+                                        <ExternalLink size={18} />
                                       </button>
                                       <button
                                         type="button"
@@ -1819,8 +1812,7 @@ export default function UserPage({ currentUser, onUserUpdate, onRebookItem }) {
                                           cursor: 'pointer'
                                         }}
                                       >
-                                        <Edit3 size={13} />
-                                        Edytuj
+                                        <Edit3 size={18} />
                                       </button>
                                       <button
                                         type="button"
@@ -1839,8 +1831,7 @@ export default function UserPage({ currentUser, onUserUpdate, onRebookItem }) {
                                           cursor: 'pointer'
                                         }}
                                       >
-                                        <Trash2 size={13} />
-                                        Usuń
+                                        <Trash2 size={18} />
                                       </button>
                                     </div>
                                   </td>
@@ -1998,7 +1989,7 @@ export default function UserPage({ currentUser, onUserUpdate, onRebookItem }) {
         </div>
       </main>
 
-      {/* WYŚRODKOWANY MODAL: Wprowadzanie szczegółów konsultacji */}
+      {/* Wprowadzanie szczegółów konsultacji */}
       {activeConsultation && (
         <div
           onClick={() => setActiveConsultation(null)}
@@ -2128,7 +2119,7 @@ export default function UserPage({ currentUser, onUserUpdate, onRebookItem }) {
         </div>
       )}
 
-      {/* WYŚRODKOWANY MODAL: Dodawanie lub edycja oferty sprzętu / usługi (bez podglądu zdjęcia, z opcją dodania nowej kategorii) */}
+      {/* Dodawanie/edycja oferty sprzętu/usługi*/}
       {offerFormMode && (
         <div
           onClick={() => setOfferFormMode(null)}
@@ -2354,7 +2345,7 @@ export default function UserPage({ currentUser, onUserUpdate, onRebookItem }) {
         </div>
       )}
 
-      {/* Modal potwierdzenia zmiany statusu zadania */}
+      {/* Potwierdzenia zmiany statusu zadania */}
       {confirmAction && (
         <div
           onClick={() => setConfirmAction(null)}
@@ -2401,7 +2392,7 @@ export default function UserPage({ currentUser, onUserUpdate, onRebookItem }) {
                   cursor: 'pointer'
                 }}
               >
-                Wróć
+                <ArrowLeft size={18} />
               </button>
               <button
                 type="button"
@@ -2427,7 +2418,7 @@ export default function UserPage({ currentUser, onUserUpdate, onRebookItem }) {
         </div>
       )}
 
-      {/* Modal potwierdzenia usunięcia oferty */}
+      {/* Potwierdzenia usunięcia oferty */}
       {confirmDeleteOffer && (
         <div
           onClick={() => setConfirmDeleteOffer(null)}
@@ -2474,7 +2465,7 @@ export default function UserPage({ currentUser, onUserUpdate, onRebookItem }) {
                   cursor: 'pointer'
                 }}
               >
-                Wróć
+                <ArrowLeft size={18} />
               </button>
               <button
                 type="button"
@@ -2561,7 +2552,6 @@ function ReservationResponsiveView({ items, showPayment, showRebook, onRebook })
                       border: `1px solid ${THEME.borderDefault}`,
                       whiteSpace: 'nowrap'
                     }}>
-                      {isService ? <Sprout size={12} /> : <Wrench size={12} />}
                       {isConsult ? 'Konsultacja' : isService ? 'Usługa' : 'Sprzęt'}
                     </span>
                   </td>
